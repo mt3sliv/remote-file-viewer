@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseRemoteFramePackages Condition="'$(UseRemoteFramePackages)' == ''">true</UseRemoteFramePackages>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../RemoteFrame.AspNetCore/RemoteFrame.AspNetCore.csproj" Condition="'$(UseRemoteFramePackages)' != 'true'" />
+		<PackageReference Include="RemoteFrame.Office.Windows" Version="0.2.0-preview.5" Condition="'$(UseRemoteFramePackages)' == 'true'" />
+
+		<Content Include="../../samples/**/*" Link="samples/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+	</ItemGroup>
+</Project>
+
+

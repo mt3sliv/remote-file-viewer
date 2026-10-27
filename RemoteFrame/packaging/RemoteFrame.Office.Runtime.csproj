@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <Version>0.2.0-preview.4</Version>
+    <PackageId>RemoteFrame.Office.Runtime.$(OfficeRuntimeIdentifier)</PackageId>
+    <Description>Package-owned LibreOffice runtime and RemoteFrame native session worker.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RuntimeCheckProject>$(MSBuildThisFileDirectory)../tools/RemoteFrame.RuntimeCheck/RemoteFrame.RuntimeCheck.csproj</RuntimeCheckProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(OfficePayloadRoot)/**/*" Condition="'$(OfficePayloadRoot)' != ''" Pack="true" PackagePath="tools/remote-frame/$(OfficeRuntimeIdentifier)/" />
+    <None Include="RemoteFrame.Office.Runtime.targets" Pack="true" PackagePath="buildTransitive/$(PackageId).targets" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <Target Name="ValidateOfficePayload" BeforeTargets="GenerateNuspec">
+    <Error Condition="'$(OfficeRuntimeIdentifier)' != 'win-x64' and '$(OfficeRuntimeIdentifier)' != 'win-arm64' and '$(OfficeRuntimeIdentifier)' != 'linux-x64' and '$(OfficeRuntimeIdentifier)' != 'linux-arm64'" Text="Set OfficeRuntimeIdentifier to a supported Windows/Linux RID." />
+    <Error Condition="'$(OfficePayloadRoot)' == '' or !Exists('$(OfficePayloadRoot)/runtime.json')" Text="OfficePayloadRoot must point to a complete native build with runtime.json. Empty runtime packages cannot be published." />
+    <Exec Command="dotnet run --project &quot;$(RuntimeCheckProject)&quot; --configuration Release -- &quot;$(OfficePayloadRoot)&quot; &quot;$(OfficeRuntimeIdentifier)&quot;" />
+  </Target>
+</Project>
+

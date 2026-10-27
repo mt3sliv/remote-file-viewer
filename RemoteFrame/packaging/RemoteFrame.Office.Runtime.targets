@@ -1,0 +1,13 @@
+<Project>
+  <!-- Copy the complete tree; LibreOffice cannot run from a flattened DLL list. -->
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)../tools/remote-frame/**/*">
+      <Link>remote-frame/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Visible>false</Visible>
+      <Pack>false</Pack>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+</Project>
