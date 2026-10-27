@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/LibreOffice/core.git",
+  "ref": "refs/tags/libreoffice-26.2.5.2",
+  "commit": "cd7284b4cbbfeb507e630c1aac019f4157393acb",
+  "version": "26.2.5.2",
+  "runtimeIdentifier": "win-x64",
+  "profile": "profiles/win-x64.args",
+  "patchSeries": "patches/series"
+}

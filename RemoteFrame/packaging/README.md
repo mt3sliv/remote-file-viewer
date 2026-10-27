@@ -50,10 +50,10 @@ Packing validates the platform, required files, path containment, license invent
 
 Run `pwsh -File RemoteFrame/tests/TestRuntimePackaging.ps1`. It creates a clearly marked text-only fixture package under ignored `artifacts/`, verifies integrity rejection cases, and installs/publishes a standalone NuGet consumer. Fixture binaries are never executed. These checks have passed on Windows; they do not validate a real Office runtime or Linux execution.
 
-## Build the real Windows preview
+## Build the Windows engine from source
 
-Run `BuildWindowsRuntime.ps1` with `-LibreOfficeDirectory` pointing to the complete upstream Windows distribution, `-VcRedistDirectory` pointing to Visual Studio's x64 `Microsoft.VC143.CRT` redistribution directory, and `-MicrosoftNoticesPath` pointing to the applicable notices. The input helper build currently uses the Visual Studio 2022 Community x64 C++ toolchain. These inputs are needed only on the maintainer's build machine. The script publishes a self-contained .NET worker, compiles the input helper, copies all Office resources and CRT DLLs, includes notices, generates the full SHA-256 inventory, and builds the aggregate package into `artifacts/packages`.
+Use the [source-build pipeline](libreoffice/README.md). It pins LibreOffice 26.2.5.2 to commit cd7284b4cbbfeb507e630c1aac019f4157393acb, prepares a dedicated checkout, applies an ordered patch series, runs configure/build/upstream checks, and writes a receipt binding the recipe and native output inventory.
 
-The Windows engine input on this workspace is LibreOffice 26.2.5.2; its upstream build revision is read from `program/version.ini`. This stages an existing upstream binary distribution rather than compiling LibreOffice itself. `-UseStagedOffice` reuses an already-copied engine after checking the launcher hash; use a fresh staging directory when changing engine versions. This is for local preview validation, with external release and clean-host acceptance still pending.
+BuildWindowsRuntime.ps1 now requires SourceBuildReceipt instead of LibreOfficeDirectory. The Package phase passes the validated source engine into the existing worker/CRT/NuGet packaging path, runs Writer/Calc edit-save probes, and records provenance and patches in the runtime. Source builds use separate *-source.N package versions; the working demo remains on the prebuilt preview until a source build has passed acceptance.
 
-The demo uses the aggregate NuGet package by default. After changing source or worker code, rebuild the packages before running the demo. Use a new preview version or a fresh local NuGet cache when changing an existing local package version.
+The pipeline code and fixture checks are implemented. No real source-built engine has been produced here because this machine lacks Cygwin and supporting build tools. No VBA patches are included in this baseline. Build dependencies belong on the maintainer machine and are not requirements for consuming web apps.

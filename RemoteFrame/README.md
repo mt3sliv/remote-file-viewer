@@ -49,3 +49,5 @@ Private-desktop capture, text input and saved-file persistence have been checked
 This remains a Windows x64 preview. Linux/ARM64 workers and payloads are not implemented. A clean Windows machine, IIS/service hosting, all DOCX/XLSX/PPTX features, IME, clipboard and all menus/shortcuts still need acceptance testing. File dialogs run with the server account's filesystem access; private desktops isolate UI, not OS permissions. Simultaneous edits use optimistic content-hash conflict detection. Screenshots/OCR can copy visible content.
 
 
+
+The [source-build pipeline](packaging/libreoffice/README.md) now provides the engine build and packaging handoff. Its baseline has no VBA patches. Real source compilation is pending the Cygwin build environment; the demo continues to use the tested prebuilt preview.

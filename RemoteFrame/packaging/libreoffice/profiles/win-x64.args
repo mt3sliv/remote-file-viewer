@@ -1,0 +1,13 @@
+# Baseline desktop build. Basic/VBA implementation is unchanged.
+--host=x86_64-pc-cygwin
+--with-visual-studio=2022
+--with-vendor=RemoteFrame
+--with-lang=en-US
+--enable-release-build
+--enable-mergelibs=more
+--without-java
+--without-junit
+--without-help
+--disable-odk
+--disable-online-update
+--disable-online-update-mar

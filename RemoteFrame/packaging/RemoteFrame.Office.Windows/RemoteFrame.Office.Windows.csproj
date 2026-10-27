@@ -7,10 +7,11 @@
     <Version>0.2.0-preview.5</Version>
     <Description>RemoteFrame ASP.NET Core integration with the bundled Windows x64 Office preview.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">0.2.0-preview.4</OfficeRuntimePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RemoteFrame.AspNetCore" Version="0.2.0-preview.4" />
-    <PackageReference Include="RemoteFrame.Office.Runtime.win-x64" Version="0.2.0-preview.4" />
+    <PackageReference Include="RemoteFrame.Office.Runtime.win-x64" Version="$(OfficeRuntimePackageVersion)" />
     <None Include="../README.md" Pack="true" PackagePath="/" />
     <None Include="_._" Pack="true" PackagePath="lib/net10.0/" />
   </ItemGroup>
