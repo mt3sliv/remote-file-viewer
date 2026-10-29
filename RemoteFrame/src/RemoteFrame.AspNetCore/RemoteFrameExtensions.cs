@@ -18,6 +18,13 @@ public sealed class RemoteFrameOptions
 {
     public bool RequireAuthorization { get; set; } = true;
     public bool EnableOffice { get; set; }
+    public bool PreferInstalledOfficeApplications { get; set; } = true;
+    public FrameConfiguration DefaultFrameConfiguration { get; set; } = new();
+    public int MaxFramesPerSecond { get; set; } = 30;
+    public int MaxCaptureWidth { get; set; } = 3840;
+    public int MaxCaptureHeight { get; set; } = 2160;
+    public long MaxPixels { get; set; } = 8294400;
+    public void Validate(FrameConfiguration value) => value.Validate(MaxFramesPerSecond, MaxCaptureWidth, MaxCaptureHeight, MaxPixels);
     public Dictionary<string, string> Files { get; } = new(StringComparer.Ordinal);
 }
 
@@ -25,7 +32,11 @@ public static class RemoteFrameExtensions
 {
     public static IServiceCollection AddRemoteFrame(this IServiceCollection services, Action<RemoteFrameOptions> configure)
     {
-        services.AddOptions<RemoteFrameOptions>().Configure(configure);
+        services.AddOptions<RemoteFrameOptions>().Configure(configure).Validate(o =>
+        {
+            try { o.Validate(o.DefaultFrameConfiguration); return true; }
+            catch (ArgumentException) { return false; }
+        }, "Invalid RemoteFrame defaults or limits.").ValidateOnStart();
         services.TryAddSingleton<SessionRegistry>();
         services.AddHostedService(sp => sp.GetRequiredService<SessionRegistry>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IRenderProvider, TextRenderProvider>());
@@ -43,6 +54,9 @@ public static class RemoteFrameExtensions
         else routes.AllowAnonymous();
         var fileMap = options.Files;
         var logger = endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("RemoteFrame");
+        routes.MapGet("/api/frame-settings", () => Results.Ok(new { defaults = options.DefaultFrameConfiguration,
+            maxFramesPerSecond = options.MaxFramesPerSecond, maxCaptureWidth = options.MaxCaptureWidth,
+            maxCaptureHeight = options.MaxCaptureHeight, maxPixels = options.MaxPixels }));
         routes.MapGet("/api/files", () => Results.Ok(fileMap.Keys.OrderBy(x => x)));
         routes.MapPost("/api/sessions", async (HttpContext ctx, OpenRequest request,
             SessionRegistry sessions, IEnumerable<IRenderProvider> providers) =>
@@ -52,20 +66,57 @@ public static class RemoteFrameExtensions
             var provider = providers.FirstOrDefault(x => x.CanOpen(filePath));
             if (provider is null) return Results.BadRequest(new { error = "No provider supports this extension." });
             if (!File.Exists(filePath)) return Results.NotFound();
+            var configuration = request.Configuration ?? options.DefaultFrameConfiguration;
+            try { options.Validate(configuration); }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
             IRenderSession renderer;
             try { renderer = await provider.OpenAsync(filePath, ctx.RequestAborted); }
             catch (Exception ex) when (ex is IOException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
             { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the bundled Office runtime and server logs." }); }
             try
             {
-                var id = sessions.Create(Owner(ctx), renderer);
-                return Results.Ok(new { id });
+                await renderer.ConfigureAsync(configuration, ctx.RequestAborted);
+                var id = sessions.Create(Owner(ctx), renderer, configuration);
+                return Results.Ok(new { id, configuration });
+            }
+            catch (NotSupportedException)
+            {
+                await renderer.DisposeAsync();
+                return Results.BadRequest(new { error = "Provider does not support frame configuration." });
+            }
+            catch (IOException ex)
+            {
+                await renderer.DisposeAsync();
+                logger.LogWarning(ex, "Cannot configure render session");
+                return Results.BadRequest(new { error = "Renderer could not apply frame settings. Check the worker version and server logs." });
+            }
+            catch (OperationCanceledException)
+            {
+                await renderer.DisposeAsync();
+                throw;
             }
             catch (InvalidOperationException)
             {
                 await renderer.DisposeAsync();
                 return Results.StatusCode(429);
             }
+        });
+
+        routes.MapPut("/api/sessions/{id}/configuration", async (HttpContext ctx, string id,
+            FrameConfiguration configuration, SessionRegistry sessions) =>
+        {
+            if (!SameOrigin(ctx)) return Results.StatusCode(403);
+            var render = sessions.Find(id, Owner(ctx));
+            if (render is null) return Results.NotFound();
+            try
+            {
+                options.Validate(configuration);
+                await render.ConfigureAsync(configuration, ctx.RequestAborted);
+                return Results.Ok(new { configuration = render.Configuration });
+            }
+            catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (NotSupportedException ex) { return Results.BadRequest(new { error = ex.Message }); }
+            catch (IOException) { return Results.Conflict(new { error = "Session is closed or could not be resized." }); }
         });
 
         routes.MapDelete("/api/sessions/{id}", async (HttpContext ctx, string id, SessionRegistry sessions) =>
@@ -108,7 +159,8 @@ public static class RemoteFrameExtensions
                         }
                         catch (JsonException) { continue; }
                         if (input is null) continue;
-                        await render.ApplyAsync(input, ct);
+                        if (input.Kind is "wheel" or "key" or "pointerdown" or "pointerup" or "pointermove" or "release" or "save")
+                            await render.ApplyAsync(input, ct);
                     }
                 }
                 finally { cts.Cancel(); try { await streaming; } catch (OperationCanceledException) { } }
@@ -123,9 +175,12 @@ public static class RemoteFrameExtensions
                 {
                     while (!ct.IsCancellationRequested)
                     {
+                        var started = System.Diagnostics.Stopwatch.GetTimestamp();
                         var frame = await render.CaptureAsync(ct);
                         await socket.SendAsync(frame.Png.AsMemory(), WebSocketMessageType.Binary, true, ct);
-                        await Task.Delay(200, ct);
+                        var remaining = FramePacing.RemainingDelay(render.Configuration.FramesPerSecond,
+                            System.Diagnostics.Stopwatch.GetElapsedTime(started));
+                        if (remaining > TimeSpan.Zero) await Task.Delay(remaining, ct);
                     }
                 }
                 finally { cts.Cancel(); }
@@ -144,5 +199,5 @@ public static class RemoteFrameExtensions
             && string.Equals(origin.Scheme, ctx.Request.Scheme, StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed record OpenRequest(string? FileId);
+    private sealed record OpenRequest(string? FileId, FrameConfiguration? Configuration);
 }

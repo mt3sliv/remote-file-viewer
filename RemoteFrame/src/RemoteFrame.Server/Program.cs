@@ -7,6 +7,7 @@ builder.Services.AddRemoteFrame(options =>
 {
     options.RequireAuthorization = false;
     options.EnableOffice = true;
+    builder.Configuration.GetSection("RemoteFrame").Bind(options);
     var samples = Path.Combine(AppContext.BaseDirectory, "samples");
     foreach (var file in Directory.EnumerateFiles(samples).OrderBy(Path.GetFileName))
         options.Files.Add(Path.GetFileName(file), file);

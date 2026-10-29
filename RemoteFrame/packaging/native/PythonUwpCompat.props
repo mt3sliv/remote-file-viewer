@@ -1,0 +1,8 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Python's UWP launchers use legacy coroutine APIs still implemented by VS 2026. -->
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == 'python_uwp' Or '$(MSBuildProjectName)' == 'pythonw_uwp'">
+    <ClCompile>
+      <PreprocessorDefinitions>_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>

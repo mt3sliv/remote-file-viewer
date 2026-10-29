@@ -6,15 +6,31 @@ namespace RemoteFrame.Rendering;
 
 public static class PngFrameEncoder
 {
-    public static byte[] EncodeBgra(byte[] bgra, int width, int height)
+    private static readonly uint[] CrcTable = CreateCrcTable();
+    private static uint[] CreateCrcTable()
+    {
+        var table = new uint[256];
+        for (uint i = 0; i < table.Length; i++)
+        {
+            var crc = i;
+            for (int bit = 0; bit < 8; bit++) crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xedb88320u : 0u);
+            table[i] = crc;
+        }
+        return table;
+    }
+    public static byte[] EncodeBgra(byte[] bgra, int width, int height, int? streamWidth = null, int? streamHeight = null)
     {
         if (width <= 0 || height <= 0 || bgra.Length != checked(width * height * 4))
             throw new ArgumentException("Invalid BGRA frame dimensions.");
+        int sourceWidth = width, sourceHeight = height;
+        width = streamWidth ?? width; height = streamHeight ?? height;
+        if (width <= 0 || height <= 0 || width > sourceWidth || height > sourceHeight)
+            throw new ArgumentException("Stream dimensions must fit the capture.");
         var pixels = new byte[checked((width * 3 + 1) * height)];
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
         {
-            var source = (y * width + x) * 4;
+            var source = ((int)((long)y * sourceHeight / height) * sourceWidth + (int)((long)x * sourceWidth / width)) * 4;
             var target = y * (width * 3 + 1) + 1 + x * 3;
             pixels[target] = bgra[source + 2];
             pixels[target + 1] = bgra[source + 1];
@@ -50,8 +66,6 @@ public static class PngFrameEncoder
     }
     private static uint CrcByte(uint crc, byte value)
     {
-        crc ^= value;
-        for (int k = 0; k < 8; k++) crc = (crc >> 1) ^ ((crc & 1) != 0 ? 0xedb88320u : 0u);
-        return crc;
+        return (crc >> 8) ^ CrcTable[(crc ^ value) & 255];
     }
 }

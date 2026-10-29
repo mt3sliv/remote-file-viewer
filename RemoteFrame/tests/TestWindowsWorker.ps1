@@ -2,6 +2,9 @@ param(
     [Parameter(Mandatory=$true)][string]$Engine,
     [Parameter(Mandatory=$true)][string]$Worker,
     [switch]$EditAndSave,
+    [switch]$PreferInstalledApplications,
+    [switch]$ConfirmFormatDialog,
+    [string]$ExpectedApplication,
     [string]$Sample = 'TestLibreOfficeWriterDocument.odt'
 )
 $ErrorActionPreference = 'Stop'
@@ -18,16 +21,27 @@ $info.RedirectStandardInput = $true
 $info.RedirectStandardOutput = $true
 $info.ArgumentList.Add($Engine)
 $info.ArgumentList.Add($probeFile)
+if (-not $PreferInstalledApplications) { $info.ArgumentList.Add('--bundled-only') }
 $probe = [System.Diagnostics.Process]::Start($info)
 function Send-Command($command) {
     $probe.StandardInput.WriteLine(($command | ConvertTo-Json -Compress))
-    $reply = $probe.StandardOutput.ReadLine() | ConvertFrom-Json
+    $read = $probe.StandardOutput.ReadLineAsync()
+    if (-not $read.Wait(150000)) { throw 'Office worker command timed out after 150 seconds.' }
+    $reply = $read.Result | ConvertFrom-Json
     if ($null -eq $reply) { throw 'Worker exited without a reply' }
-    if ($reply.error) { throw $reply.error }
+    if ($reply.PSObject.Properties['error']) { throw $reply.error }
     return $reply
 }
 try {
+    $settings = @{framesPerSecond=10;captureWidth=960;captureHeight=600;streamWidth=480;streamHeight=300}
+    $configured = Send-Command @{kind='configure';configuration=$settings}
+    if ($configured.configuration.streamWidth -ne 480) { throw 'Worker did not acknowledge frame configuration' }
+    $resized = Send-Command @{kind='capture'}
+    if ($resized.width -ne 480 -or $resized.height -ne 300) { throw 'Worker did not apply stream dimensions' }
+    Write-Output 'PASS: Rebuilt worker applies capture and stream configuration.'
+    Send-Command @{kind='configure';configuration=@{framesPerSecond=5;captureWidth=1280;captureHeight=800;streamWidth=1280;streamHeight=800}} | Out-Null
     $reply = Send-Command @{kind='capture'}
+    if ($ExpectedApplication -and $reply.application -ne $ExpectedApplication) { throw "Expected $ExpectedApplication, received $($reply.application)" }
     [System.IO.File]::WriteAllBytes("$probeDir/initial.png", [Convert]::FromBase64String($reply.png))
     Write-Output "Captured $($reply.width)x$($reply.height) private desktop frame"
     if ($EditAndSave) {
@@ -44,6 +58,10 @@ try {
         [System.IO.File]::WriteAllBytes("$probeDir/typed.png", [Convert]::FromBase64String($reply.png))
         Send-Command @{kind='save'} | Out-Null
         Start-Sleep -Milliseconds 1500
+        if ($ConfirmFormatDialog) {
+            Send-Command @{kind='key';key='Enter'} | Out-Null
+            Start-Sleep -Milliseconds 1500
+        }
         $reply = Send-Command @{kind='capture'}
         [System.IO.File]::WriteAllBytes("$probeDir/edited.png", [Convert]::FromBase64String($reply.png))
         $zip = [System.IO.Compression.ZipFile]::OpenRead($probeFile)

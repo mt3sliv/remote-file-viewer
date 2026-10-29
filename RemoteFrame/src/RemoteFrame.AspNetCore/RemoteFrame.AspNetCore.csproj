@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageId>RemoteFrame.AspNetCore</PackageId>
-    <Version>0.2.0-preview.4</Version>
+    <Version>0.3.0-preview.7</Version>
     <Description>Server-side file rendering endpoints and session management for ASP.NET Core.</Description>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
   </PropertyGroup>

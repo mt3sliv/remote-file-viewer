@@ -24,10 +24,17 @@ function Test-Prerequisites {
     if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'X64') { $missing.Add('A Windows x64 source-build machine') }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { $missing.Add('Git') }
     if (-not (Test-Path -LiteralPath $BashPath -PathType Leaf)) { $missing.Add("Cygwin build shell: $BashPath (Git Bash is not supported)") }
-    $vcvars = Join-Path $env:ProgramFiles 'Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat'
-    if (-not (Test-Path -LiteralPath $vcvars)) { $missing.Add('Visual Studio 2022 Community C++ tools (also used by the existing input-helper build)') }
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $vsYear = (Select-String -LiteralPath $recipe.Profile -Pattern '^--with-visual-studio=(2022|2026)$').Matches.Groups[1].Value
+    $vsMajor = if ($vsYear -eq '2026') { 18 } else { 17 }
+    $vsPath = if (Test-Path -LiteralPath $vswhere) {
+        & $vswhere -latest -products '*' -version "[$vsMajor,$($vsMajor + 1))" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    }
+    if (-not $vsPath -or -not (Test-Path -LiteralPath (Join-Path $vsPath 'VC/Auxiliary/Build/vcvars64.bat'))) {
+        $missing.Add("Visual Studio $vsYear C++ tools required by the pinned build profile")
+    }
     if ($missing.Count) { throw ("Source build prerequisites are missing:`n - " + ($missing -join "`n - ")) }
-    & $BashPath --login (Join-Path $PSScriptRoot 'build-engine.sh').Replace('\','/') --preflight
+    & $BashPath --login -c 'exec /bin/bash "$@"' remote-frame-build (Join-Path $PSScriptRoot 'build-engine.sh').Replace('\','/') --preflight
     if ($LASTEXITCODE -ne 0) { throw 'The Cygwin build-tool preflight failed. No source was downloaded.' }
     Write-Output "Preflight passed. Source revision: $($recipe.Lock.commit)"
     Write-Output "Build directory: $jobRoot"
@@ -72,7 +79,7 @@ switch ($Phase) {
         if (Test-Path -LiteralPath $receiptPath) { Remove-Item -LiteralPath $receiptPath }
         $argsFile = Join-Path $jobRoot 'configure.args'
         Copy-Item -LiteralPath $recipe.Profile -Destination $argsFile -Force
-        & $BashPath --login (Join-Path $PSScriptRoot 'build-engine.sh').Replace('\','/') $checkout $argsFile $Jobs 2>&1 |
+        & $BashPath --login -c 'exec /bin/bash "$@"' remote-frame-build (Join-Path $PSScriptRoot 'build-engine.sh').Replace('\','/') $checkout $argsFile $Jobs 2>&1 |
             Tee-Object -FilePath (Join-Path $jobRoot 'build.log')
         if ($LASTEXITCODE -ne 0) { throw 'LibreOffice configure/build/check failed. No successful receipt was written; inspect build.log.' }
         if ((Get-FileDigest $argsFile) -ne $recipe.ProfileHash) { throw 'Configure arguments changed during the build.' }

@@ -5,6 +5,10 @@ namespace RemoteFrame.Office.Worker;
 
 internal static class Native
 {
+    [DllImport("user32.dll")] internal static extern bool IsChild(nint parent, nint child);
+    [DllImport("user32.dll")] internal static extern nint GetWindow(nint window, uint command);
+    [DllImport("user32.dll")] internal static extern nint GetAncestor(nint window, uint flags);
+    [DllImport("kernel32.dll", SetLastError = true)] internal static extern bool IsProcessInJob(nint process, nint job, out bool result);
     [DllImport("user32.dll")] internal static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint window, int command);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern nint LoadLibrary(string file);
@@ -69,6 +73,7 @@ internal static class Native
     [DllImport("gdi32.dll")] internal static extern bool DeleteObject(nint value);
     [DllImport("gdi32.dll")] internal static extern bool DeleteDC(nint dc);
     [DllImport("gdi32.dll")] internal static extern bool PatBlt(nint dc, int x, int y, int width, int height, uint operation);
+    [DllImport("gdi32.dll")] internal static extern bool BitBlt(nint destination, int x, int y, int width, int height, nint source, int sourceX, int sourceY, uint operation);
     [DllImport("gdi32.dll")] internal static extern bool SetViewportOrgEx(nint dc, int x, int y, out Point previous);
     [DllImport("gdi32.dll")] internal static extern bool GdiFlush();
     [DllImport("user32.dll")] internal static extern bool ScreenToClient(nint window, ref Point point);

@@ -1,8 +1,8 @@
 # Package-owned Office runtime
 
-The native payload is built by RemoteFrame maintainers, not by consuming web applications. The Windows x64 artifacts are built locally under ignored artifacts/; the repository tracks their worker source and packaging recipes. Linux/ARM64 artifacts are not implemented. This project packages a completed runtime tree; it does not turn the LibreOffice source repository into a working runtime by itself.
+The native payload is built by RemoteFrame maintainers, not by consuming web applications. Windows x64 artifacts are generated locally under ignored artifacts/; the repository tracks their worker source and packaging recipes. Linux/ARM64 artifacts are not implemented. This project packages a completed runtime tree; it does not turn the LibreOffice source repository into a working runtime by itself.
 
-Each supported target has a runtime package: `RemoteFrame.Office.Runtime.win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`. The Windows preview aggregate package RemoteFrame.Office.Windows depends on the ASP.NET Core library and win-x64 runtime. Consumers install that one package. No packages have been published externally.
+Each supported target has a runtime package: `RemoteFrame.Office.Runtime.win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`. The aggregate package `RemoteFrame.Office.Windows` version `0.3.0-source.1` depends on managed `0.3.0-preview.1` and the matching win-x64 runtime. Those native and aggregate artifacts are not available until the source-build packaging phase succeeds. Consumers install that one package. No packages have been published externally.
 
 ## Staging contract
 
@@ -35,11 +35,11 @@ List every runtime file except `runtime.json` in `files`, using relative paths a
 dotnet pack RemoteFrame/packaging/RemoteFrame.Office.Runtime.csproj -c Release -o RemoteFrame/artifacts/packages -p:OfficeRuntimeIdentifier=win-x64 -p:OfficePayloadRoot=C:/build/staged-runtime
 ```
 
-Packing validates the platform, required files, path containment, license inventory and hashes. Empty/incomplete payloads fail packaging. Assets are copied transitively into `remote-frame/<rid>/` in both build and publish output, preserving subdirectories. `BundledOfficeRuntime.Load()` resolves only this package-owned location; it never searches PATH, uses a system LibreOffice installation, or downloads a runtime.
+Packing validates the platform, required files, path containment, license inventory and hashes. Empty/incomplete payloads fail packaging. Assets are copied transitively into `remote-frame/<rid>/` in both build and publish output, preserving subdirectories. `BundledOfficeRuntime.Load()` validates only this package-owned location. The worker independently prefers supported installed applications before falling back to the validated bundled engine; installed applications are not part of the package inventory. Nothing is downloaded at application startup. Engine acceptance probes pass `--bundled-only` so an installed application cannot mask a defective bundled payload.
 
 ## Release gates still outstanding
 
-- Build actual Windows/Linux payloads and implement private-session capture/input workers.
+- Implement Linux/ARM64 payloads and private-session capture/input workers.
 - Validate the complete transitive native dependency set on clean supported OS images. The baseline OS/architecture/libc must be documented; bundling cannot make binaries independent of the operating system.
 - Verify Linux execution permissions survive NuGet/build/publish; restore required executable bits internally if necessary.
 - Verify application startup, menus/dialogs, input, save persistence, crashes, session isolation and cleanup without interactive server login.
@@ -54,6 +54,18 @@ Run `pwsh -File RemoteFrame/tests/TestRuntimePackaging.ps1`. It creates a clearl
 
 Use the [source-build pipeline](libreoffice/README.md). It pins LibreOffice 26.2.5.2 to commit cd7284b4cbbfeb507e630c1aac019f4157393acb, prepares a dedicated checkout, applies an ordered patch series, runs configure/build/upstream checks, and writes a receipt binding the recipe and native output inventory.
 
-BuildWindowsRuntime.ps1 now requires SourceBuildReceipt instead of LibreOfficeDirectory. The Package phase passes the validated source engine into the existing worker/CRT/NuGet packaging path, runs Writer/Calc edit-save probes, and records provenance and patches in the runtime. Source builds use separate *-source.N package versions; the working demo remains on the prebuilt preview until a source build has passed acceptance.
+Run `pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Source` to build and package the engine, or provide `-SourceBuildReceipt` to reuse a successful build. The Package phase passes the validated source engine into the worker/CRT/NuGet packaging path, runs Writer/Calc edit-save probes, and records provenance and patches. Source releases use separate `*-source.N` versions and never accept failed/missing test receipts.
 
-The pipeline code and fixture checks are implemented. No real source-built engine has been produced here because this machine lacks Cygwin and supporting build tools. No VBA patches are included in this baseline. Build dependencies belong on the maintainer machine and are not requirements for consuming web apps.
+The current source engine compiled and linked but failed `VclFiltersTest::testCVEs` on a JPEG fixture. It has no successful receipt. No VBA extension patches are included. Build dependencies belong on the maintainer machine, not consumer hosts.
+
+## Package with upstream binaries (default)
+
+Run `pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Binary` (the switch can be omitted). `libreoffice/binary.lock.json` pins the official Windows x64 MSI and SHA-256 verified against Microsoft's winget manifest. `Prepare-WindowsBinary.ps1` verifies the download, creates an administrative image inside `artifacts/libreoffice-binary` without installing/registering Office, and writes a receipt binding its extracted file inventory to that archive. Cached inputs are reverified on reuse.
+
+`BuildWindowsRuntime.ps1 -EngineMode Binary -BinaryBuildReceipt <path>` validates the receipt, rebuilds the worker/input helper, stages a fresh payload, runs bundled-only Writer/Calc edit-save checks, includes provenance/notices and packs managed/runtime/aggregate NuGets. Source mode accepts only `-SourceBuildReceipt`. Receipt types cannot be substituted. Binary provenance records the official archive and our smoke checks, not a successful local upstream source build. Binary mode needs .NET 10, PowerShell 7 and Visual Studio C++ tools for our small input helper; no Cygwin or LibreOffice compiler is used. Runtime/notices paths are discovered or supplied explicitly.
+
+Binary and managed versions default to `0.3.0-preview.7`; source distributions default to `0.3.0-source.2`. The demo consumes the binary aggregate by default and accepts `-p:RemoteFramePackageVersion=...` for another release. Later builds need fresh package versions to avoid stale NuGet caches. `UseRemoteFramePackages` controls demo package/project references independently of engine selection.
+
+Run `tests/TestBinaryBuild.ps1` and `tests/TestSourceBuild.ps1` for receipt/mode integrity checks. Actual Office smoke checks run during packaging. Linux/ARM64 binary preparation is not implemented.
+
+LibreOffice's automatic updater and Python bytecode writes are disabled inside each private worker session. A pinned package must not download updates or rewrite its engine directory. Packaging rechecks the complete engine inventory after smoke tests, including the explicitly overlaid CRT files. To resume a failed worker/probe step without copying the whole engine again, provide `-StagedPayload <previous generated win-x64 payload>`; the engine identity, every file hash and absence of obsolete worker files are checked before reuse. Changed stages are rejected, not silently accepted.

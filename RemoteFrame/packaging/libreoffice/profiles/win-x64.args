@@ -1,6 +1,6 @@
 # Baseline desktop build. Basic/VBA implementation is unchanged.
 --host=x86_64-pc-cygwin
---with-visual-studio=2022
+--with-visual-studio=2026
 --with-vendor=RemoteFrame
 --with-lang=en-US
 --enable-release-build

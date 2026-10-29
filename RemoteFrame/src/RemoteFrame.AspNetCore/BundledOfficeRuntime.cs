@@ -30,7 +30,7 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
         var root = Path.GetFullPath(directory);
         var manifestPath = Path.Combine(root, "runtime.json");
         if (!File.Exists(manifestPath))
-            throw new InvalidOperationException($"Bundled Office runtime '{expectedRuntimeIdentifier}' is missing. The RemoteFrame distribution must include its native runtime package; no system installation will be used.");
+            throw new InvalidOperationException($"Bundled Office runtime '{expectedRuntimeIdentifier}' is missing. Expected manifest: {manifestPath}. Restore and deploy RemoteFrame.Office.Windows with its native runtime dependency. The payload must include the rebuilt configuration-capable worker and input helper, even when installed applications are preferred.");
         var manifest = JsonSerializer.Deserialize<RuntimeManifest>(File.ReadAllText(manifestPath),
             new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? throw new InvalidDataException("Office runtime manifest is empty.");
         if (manifest.SchemaVersion != 1 || manifest.RuntimeIdentifier != expectedRuntimeIdentifier ||

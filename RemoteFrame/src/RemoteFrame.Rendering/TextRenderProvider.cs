@@ -25,6 +25,17 @@ public sealed class TextRenderProvider : IRenderProvider
     private sealed class TextSession(string[] lines) : IRenderSession
     {
         private int _firstLine;
+        private Frame? cachedFrame;
+        private FrameConfiguration configuration = new(CaptureWidth: 960, CaptureHeight: 600, StreamWidth: 960, StreamHeight: 600);
+        public async ValueTask ConfigureAsync(FrameConfiguration value, CancellationToken ct)
+        {
+            value.Validate();
+            await _gate.WaitAsync(ct);
+            try {
+                if (value with { FramesPerSecond = configuration.FramesPerSecond } != configuration) cachedFrame = null;
+                configuration = value;
+            } finally { _gate.Release(); }
+        }
         private readonly SemaphoreSlim _gate = new(1, 1);
         public async ValueTask ApplyAsync(InputEvent input, CancellationToken ct)
         {
@@ -42,14 +53,16 @@ public sealed class TextRenderProvider : IRenderProvider
                     "key" when input.Key == "End" => lines.Length,
                     _ => 0
                 };
-                _firstLine = Math.Clamp(_firstLine + step, 0, Math.Max(0, lines.Length - 1));
+                var next = Math.Clamp(_firstLine + step, 0, Math.Max(0, lines.Length - 1));
+                if (next != _firstLine) cachedFrame = null;
+                _firstLine = next;
             }
             finally { _gate.Release(); }
         }
         public async ValueTask<Frame> CaptureAsync(CancellationToken ct)
         {
             await _gate.WaitAsync(ct);
-            try { return new Frame(PngTextRasterizer.Render(lines, _firstLine), 960, 600); }
+            try { return cachedFrame ??= new Frame(PngTextRasterizer.Render(lines, _firstLine, configuration.CaptureWidth, configuration.CaptureHeight, configuration.StreamWidth, configuration.StreamHeight), configuration.StreamWidth, configuration.StreamHeight); }
             finally { _gate.Release(); }
         }
         public ValueTask DisposeAsync() { _gate.Dispose(); return ValueTask.CompletedTask; }

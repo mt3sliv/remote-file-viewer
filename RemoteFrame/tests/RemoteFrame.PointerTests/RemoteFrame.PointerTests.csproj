@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/RemoteFrame.Core/RemoteFrame.Core.csproj" />
+    <Compile Include="../../src/RemoteFrame.Office.Worker/Native.cs" Link="Native.cs" />
+    <Compile Include="../../src/RemoteFrame.Office.Worker/OfficeApplication.cs" Link="OfficeApplication.cs" />
+    <Compile Include="../../src/RemoteFrame.Office.Worker/WindowsOfficeDesktop.cs" Link="WindowsOfficeDesktop.cs" />
+    <Compile Include="../../src/RemoteFrame.Office.Worker/CloseButtonGesture.cs" Link="CloseButtonGesture.cs" />
+    <None Include="../../artifacts/pointer-input-helper/RemoteFrame.InputHook.dll" Link="RemoteFrame.InputHook.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../artifacts/pointer-input-helper/RemoteFrame.InputHook.dll')" />
+  </ItemGroup>
+</Project>

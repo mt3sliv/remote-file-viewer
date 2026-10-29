@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "version": "26.2.5.2",
+  "runtimeIdentifier": "win-x64",
+  "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.5.2/win/x86_64/LibreOffice_26.2.5.2_Win_x86-64.msi",
+  "sha256": "F15BA07BFCB0186986CF3171063506F5D207C11F8CC051BA0D135209E9E915F9",
+  "checksumSource": "https://github.com/microsoft/winget-pkgs/blob/master/manifests/t/TheDocumentFoundation/LibreOffice/26.2.5.2/TheDocumentFoundation.LibreOffice.installer.yaml"
+}

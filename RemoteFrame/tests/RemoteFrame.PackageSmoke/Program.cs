@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using RemoteFrame.AspNetCore;
@@ -12,7 +13,10 @@ using RemoteFrame.AspNetCore;
 var file = Path.Combine(Path.GetTempPath(), "remoteframe-test-" + Guid.NewGuid().ToString("N") + ".txt");
 await File.WriteAllTextAsync(file, "Package integration smoke test\nSecond line");
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 builder.WebHost.UseUrls("http://127.0.0.1:0");
+builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(options =>
 {
     options.Events.OnRedirectToLogin = context => { context.Response.StatusCode = 401; return Task.CompletedTask; };
@@ -42,7 +46,7 @@ try
     Check((await client.GetAsync("/renderer/api/files")).StatusCode == HttpStatusCode.Forbidden, "Missing owner claim denied");
     SetUser("alice");
     Check((await client.GetFromJsonAsync<string[]>("/renderer/api/files"))!.SequenceEqual(["test"]), "Prefixed file listing");
-    var response = await client.PostAsJsonAsync("/renderer/api/sessions", new { fileId = "test" });
+    var response = await client.PostAsJsonAsync("/renderer/api/sessions", new { fileId = "test", configuration = new { framesPerSecond = 10, captureWidth = 640, captureHeight = 400, streamWidth = 320, streamHeight = 200 } });
     response.EnsureSuccessStatusCode();
     var id = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
     SetUser("bob");
@@ -56,7 +60,13 @@ try
     var frame = await socket.ReceiveAsync(bytes.AsMemory(), timeout.Token);
     Check(frame.MessageType == WebSocketMessageType.Binary && bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }),
         "PNG stream and cross-user delete isolation");
+    Check(System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(bytes.AsSpan(16, 4)) == 320,
+        "Packed middleware applies stream configuration");
     SetUser("alice");
+    (await client.PutAsJsonAsync($"/renderer/api/sessions/{id}/configuration", new {
+        framesPerSecond = 5, captureWidth = 640, captureHeight = 400, streamWidth = 640, streamHeight = 400
+    })).EnsureSuccessStatusCode();
+    Check(true, "Packed middleware accepts dynamic configuration");
     (await client.DeleteAsync($"/renderer/api/sessions/{id}")).EnsureSuccessStatusCode();
     socket.Abort();
     Console.WriteLine("Package integration checks passed.");
