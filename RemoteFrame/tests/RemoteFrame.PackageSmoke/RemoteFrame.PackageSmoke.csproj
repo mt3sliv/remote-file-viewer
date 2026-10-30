@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="RemoteFrame.AspNetCore" Version="0.3.0-preview.7" />
+    <PackageReference Include="RemoteFrame.AspNetCore" Version="$(RemoteFramePackageVersion)" />
   </ItemGroup>
 </Project>
 

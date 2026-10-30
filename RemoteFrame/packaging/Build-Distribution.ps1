@@ -5,11 +5,13 @@ param(
     [string]$VcRedistDirectory,
     [string]$MicrosoftNoticesPath,
     [string]$PackageVersion,
-    [string]$ManagedPackageVersion = '0.3.0-preview.7',
+    [string]$ManagedPackageVersion,
     [ValidateRange(1,64)][int]$Jobs = 8
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if (-not $PackageVersion) { $PackageVersion = if ($OfficeEngine -eq 'Source') { '0.3.0-source.2' } else { & "$PSScriptRoot/Get-ReleaseVersion.ps1" } }
+if (-not $ManagedPackageVersion) { $ManagedPackageVersion = $PackageVersion }
 if (-not $IsWindows) { throw 'Windows distributions currently require Windows x64.' }
 if ($OfficeEngine -eq 'Binary' -and $SourceBuildReceipt) { throw 'A source receipt cannot be used in Binary mode.' }
 $root = Split-Path $PSScriptRoot -Parent

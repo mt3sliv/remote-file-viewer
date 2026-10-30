@@ -8,9 +8,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $server = Join-Path $root 'src/RemoteFrame.Server'
-[xml]$project = Get-Content -LiteralPath "$server/RemoteFrame.Server.csproj" -Raw
 $expectedVersion = if ($ExpectedPackageVersion) { $ExpectedPackageVersion } else {
-    $project.SelectSingleNode('/Project/PropertyGroup/RemoteFramePackageVersion').InnerText
+    & "$root/packaging/Get-ReleaseVersion.ps1"
 }
 $assets = Get-Content -LiteralPath "$server/obj/project.assets.json" -Raw | ConvertFrom-Json -AsHashtable
 foreach ($package in 'RemoteFrame.Office.Windows', 'RemoteFrame.Office.Runtime.win-x64') {
@@ -19,10 +18,13 @@ foreach ($package in 'RemoteFrame.Office.Windows', 'RemoteFrame.Office.Runtime.w
     }
 }
 if ($UsePackageWorker) {
-    $FreshWorkerDirectory = $assets.packageFolders.Keys | ForEach-Object {
-        Join-Path $_ "remoteframe.office.runtime.win-x64/$expectedVersion/tools/remote-frame/win-x64/worker"
-    } | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1
-    if (-not $FreshWorkerDirectory) { throw "Cannot locate the restored runtime package $expectedVersion." }
+    $packageWorkerDirectories = @(foreach ($folder in $assets.packageFolders.Keys) {
+        foreach ($library in $assets.libraries.Values | Where-Object { $_.path -like 'remoteframe.office.runtime.win-x64*/*' }) {
+            $candidate = Join-Path $folder "$($library.path)/tools/remote-frame/win-x64/worker"
+            if (Test-Path $candidate) { $candidate }
+        }
+    })
+    if ($packageWorkerDirectories.Count -eq 0) { throw "Cannot locate the restored runtime package $expectedVersion." }
 }
 if (-not $ServerOutputDirectory) { $ServerOutputDirectory = Join-Path $server "bin/$Configuration/net10.0" }
 foreach ($package in 'RemoteFrame.AspNetCore','RemoteFrame.Core','RemoteFrame.Rendering') {
@@ -40,7 +42,11 @@ foreach ($package in 'RemoteFrame.AspNetCore','RemoteFrame.Core','RemoteFrame.Re
 $runtime = Join-Path $ServerOutputDirectory 'remote-frame/win-x64'
 $manifest = Get-Content -LiteralPath "$runtime/runtime.json" -Raw | ConvertFrom-Json -AsHashtable
 foreach ($name in 'RemoteFrame.Office.Worker.exe','RemoteFrame.Office.Worker.dll','RemoteFrame.Core.dll','RemoteFrame.Rendering.dll','RemoteFrame.InputHook.dll') {
-    $expected = (Get-FileHash -LiteralPath (Join-Path $FreshWorkerDirectory $name)).Hash
+    $expectedFile = if ($UsePackageWorker) {
+        $packageWorkerDirectories | ForEach-Object { Join-Path $_ $name } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    } else { Join-Path $FreshWorkerDirectory $name }
+    if (-not $expectedFile) { throw "Missing packaged worker file: $name" }
+    $expected = (Get-FileHash -LiteralPath $expectedFile).Hash
     $actual = (Get-FileHash -LiteralPath "$runtime/worker/$name").Hash
     if ($actual -ne $expected -or $manifest.files["worker/$name"] -ne $expected) {
         throw "The demo has a stale or incorrectly manifested worker dependency: $name"

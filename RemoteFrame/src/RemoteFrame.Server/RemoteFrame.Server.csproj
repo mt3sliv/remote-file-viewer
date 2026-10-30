@@ -4,7 +4,6 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseRemoteFramePackages Condition="'$(UseRemoteFramePackages)' == ''">true</UseRemoteFramePackages>
-		<RemoteFramePackageVersion Condition="'$(RemoteFramePackageVersion)' == ''">0.3.0-preview.7</RemoteFramePackageVersion>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="../RemoteFrame.AspNetCore/RemoteFrame.AspNetCore.csproj" Condition="'$(UseRemoteFramePackages)' != 'true'" />

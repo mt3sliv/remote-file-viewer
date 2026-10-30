@@ -4,11 +4,10 @@
     <EnableDefaultItems>false</EnableDefaultItems>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <PackageId>RemoteFrame.Office.Windows</PackageId>
-    <Version>0.3.0-preview.7</Version>
     <Description>RemoteFrame ASP.NET Core integration with the bundled Windows x64 Office preview.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <ManagedPackageVersion Condition="'$(ManagedPackageVersion)' == ''">0.3.0-preview.7</ManagedPackageVersion>
-    <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">0.3.0-preview.7</OfficeRuntimePackageVersion>
+    <ManagedPackageVersion Condition="'$(ManagedPackageVersion)' == ''">$(Version)</ManagedPackageVersion>
+    <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">$(Version)</OfficeRuntimePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RemoteFrame.AspNetCore" Version="$(ManagedPackageVersion)" />

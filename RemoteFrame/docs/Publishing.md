@@ -1,0 +1,116 @@
+# GitHub Actions and NuGet.org releases
+
+The repository root contains `.github/workflows/ci.yml` and `publish.yml`.
+All commands run inside the `RemoteFrame` solution directory.
+
+## Build checks
+
+Pushes and pull requests to `dev` and `main` run managed builds/tests on Ubuntu
+and Windows, browser input tests, and clean split-package restore/build/publish
+tests. The Windows job also builds the native helper, tests pointer/modal input,
+downloads the pinned official LibreOffice MSI, verifies its hashes, and builds
+and tests the complete distribution. Installed Excel is not present on hosted
+runners; its separate integration test still requires an Excel-equipped machine.
+
+The Windows build restores only the verified upstream binary distribution; it
+does not compile LibreOffice from source. Its archive/extraction cache is keyed
+by `binary.lock.json` and revalidated on every use. Source builds remain available
+through the existing source-receipt workflow, outside these release actions.
+
+The `nuget-release` artifact contains the exact packages tested, plus
+`release.json` recording their version, source commit, size and SHA-256. Upload
+retention is 14 days. Publishing downloads that artifact instead of rebuilding.
+
+## One-time account setup
+
+1. Create/use a NuGet.org account and check ownership/availability of the
+   `RemoteFrame.*` package IDs. Select the intended account or organization as
+   package owner, including new runtime part IDs.
+2. In GitHub, create an environment named `nuget` and set its variable
+   `NUGET_USER` to the NuGet.org profile name (not an email address). The workflow
+   uses this environment for publishing. Configure its release controls to suit
+   the repository's policy.
+3. In NuGet.org Trusted Publishing, add a GitHub policy:
+   - Repository owner: `mt3sliv`
+   - Repository: `remote-file-viewer`
+   - Workflow file: `publish.yml` (file name only)
+   - Environment: `nuget`
+   - Package scope: `RemoteFrame.*`, permitting new packages and new versions.
+
+No long-lived API key is required. `NuGet/login@v1` exchanges the job's GitHub
+OIDC identity for a temporary key immediately before publishing. Only that job
+receives `id-token: write`; pull requests never publish.
+
+See [NuGet Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing).
+
+## Releasing
+
+The development default version lives in `Directory.Build.props`. Release tags
+override it consistently for managed packages, the worker, runtime parts,
+runtime coordinator and Windows aggregate. Use a fresh version; do not overwrite
+an already published package version.
+
+For example, after committing the intended release:
+
+```powershell
+git tag v0.3.0-preview.8
+git push origin v0.3.0-preview.8
+```
+
+This runs the complete CI workflow, then publishes its verified artifacts to
+NuGet.org. Stable tags such as `v0.3.0` are also supported. Manual dispatch is
+allowed only when selecting a `v<version>` tag, so an ordinary branch dispatch
+cannot publish. A failure stops publishing; rerun the failed publish job to reuse
+the same artifacts, with already uploaded versions skipped.
+
+Dependencies are uploaded before their coordinators. NuGet.org may take time
+to index new packages after upload; the action does not claim immediate search
+visibility. Package publication has not been exercised against NuGet.org locally.
+
+## Runtime size and installation
+
+NuGet.org accepts packages up to 250 MB. The runtime is now split into deterministic
+file groups capped at 180,000,000 uncompressed payload bytes, with an additional
+240,000,000-byte check on every finished release package. An individually oversized
+file fails the build rather than silently removing runtime content.
+
+`RemoteFrame.Office.Runtime.win-x64.Part001`, `Part002`, etc. carry the original
+files and transitive copy targets. The small `RemoteFrame.Office.Runtime.win-x64`
+coordinator pins all parts to exact versions. `RemoteFrame.Office.Windows` keeps
+its existing package ID and installation API. Restore pulls all parts; build and
+publish assemble them into the same `remote-frame/win-x64` tree. The unchanged
+runtime manifest verifies the complete reassembled inventory. Original component
+licenses and notices remain present, and each part includes combined license
+metadata for the wrapper and bundled components.
+
+No installation-time download code or NuGet install script is introduced.
+The generic split-packager accepts Windows/Linux runtime identifiers, but this
+repository currently builds only the Windows native distribution. Managed Linux
+tests do not imply a published Linux native runtime.
+
+## Local verification
+
+```powershell
+pwsh -File packaging/Test-Managed.ps1
+pwsh -File tests/TestSplitRuntimePackaging.ps1
+pwsh -File tests/TestPointerInput.ps1
+pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Binary
+dotnet build src/RemoteFrame.Server -c Release
+pwsh -File tests/TestDemoRuntime.ps1 -Configuration Release
+pwsh -File packaging/New-ReleaseManifest.ps1 -Version 0.3.0-preview.8
+pwsh -File packaging/Publish-NuGet.ps1 -Version 0.3.0-preview.8 -ValidateOnly
+```
+
+The split fixture uses a separate feed and clean restore cache, then compares
+every output file's hash after both build and publish, including extensionless
+and hidden files. The production distribution build also checks the actual
+runtime package sizes and runs bundled Writer/Calc edit/save tests.
+
+Local validation of preview.8 produced 15 packages (10 runtime parts and five
+library/coordinator packages); the largest part was about 74.7 MB. The packaged
+demo built with zero warnings/errors and its complete 19,698-file runtime passed
+hash validation. Managed, browser, native pointer/modal, binary-provenance, clean
+split restore/build/publish, release-policy, and workflow syntax checks passed.
+These are local Windows results; the Ubuntu and hosted Windows jobs still need
+their first GitHub run. No release tag or NuGet.org package was published during
+this setup.

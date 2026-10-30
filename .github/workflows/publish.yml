@@ -1,0 +1,68 @@
+name: Publish NuGet
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nuget-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require a version tag
+        id: version
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if ($env:REF_TYPE -ne 'tag' -or -not $env:REF_NAME.StartsWith('v')) { throw 'Select a v<version> tag to publish.' }
+          $version = ./RemoteFrame/packaging/Get-ReleaseVersion.ps1 $env:REF_NAME.Substring(1)
+          "version=$version" >> $env:GITHUB_OUTPUT
+  build:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-release
+          path: RemoteFrame/artifacts/packages
+      - name: Verify release artifacts
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./RemoteFrame/packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -ValidateOnly
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish dependencies then aggregate
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: ./RemoteFrame/packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION

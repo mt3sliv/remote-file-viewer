@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.3.0-preview.8</Version>
+    <RemoteFramePackageVersion Condition="'$(RemoteFramePackageVersion)' == ''">$(Version)</RemoteFramePackageVersion>
+    <Authors>mt3sliv</Authors>
+    <RepositoryUrl>https://github.com/mt3sliv/remote-file-viewer</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/mt3sliv/remote-file-viewer</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>
