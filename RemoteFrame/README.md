@@ -10,7 +10,7 @@ RemoteFrame is an ASP.NET Core middleware/endpoint library for server-side text 
 
 ## Run the local demo
 
-The demo consumes the aggregate `RemoteFrame.Office.Windows` NuGet package, which includes the middleware and a transitive native runtime. The configured version is `0.3.0-preview.9`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
+The demo consumes the aggregate `RemoteFrame.Office.Windows` NuGet package, which includes the middleware and a transitive native runtime. The configured development version is `0.3.0-preview.10`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
 
 ```powershell
 dotnet run --project RemoteFrame/src/RemoteFrame.Server
@@ -18,29 +18,32 @@ dotnet run --project RemoteFrame/src/RemoteFrame.Server
 
 From inside the RemoteFrame directory, use `dotnet run --project src/RemoteFrame.Server` instead. Open **http://127.0.0.1:5088**. There is no API key, login route, authentication cookie, or sign-in screen. The demo binds to loopback and rejects non-loopback clients.
 
-All files in `samples` are copied into the demo's build/publish output and registered by filename, including `readme.txt`, `TestLibreOfficeWriterDocument.odt`, and `TestLibreOfficeCalcDocument.ods`. Choose a file and click **Open file**. Click inside Office to edit; **Save document** invokes the selected application's Save command. Edits persist to the output sample copy, leaving the repository's original samples unchanged. Text rendering is read-only. Closing a session discards unsaved edits.
+All files in `samples` are copied into the demo's build/publish output and registered by filename, including `readme.txt`, `TestLibreOfficeWriterDocument.odt`, and `TestLibreOfficeCalcDocument.ods`. Choose a file link to open its viewer in a new tab. Click inside Office to edit; **Save document** invokes the selected application's Save command. Edits persist to the output sample copy, leaving the repository's original samples unchanged. Text rendering is read-only. Closing a session discards unsaved edits.
 
 ## Use in your web app
 
-Install `RemoteFrame.Office.Windows` from the local feed (version `0.3.0-preview.9`). It brings in the ASP.NET Core library and native runtime transitively. These preview packages are local artifacts, not published NuGet.org releases.
+Install `RemoteFrame.Office.Windows` from NuGet.org. It brings in the ASP.NET Core library and native runtime transitively. Published versions are listed on [NuGet.org](https://www.nuget.org/packages/RemoteFrame.Office.Windows). The development version in `Directory.Build.props` may be newer than the latest published release.
 
 ```csharp
 using RemoteFrame.AspNetCore;
 
 builder.Services.AddRemoteFrame(options =>
 {
-    options.RequireAuthorization = false; // local demo only
     options.EnableOffice = true;
     options.Files.Add("document", @"C:\Documents\example.docx");
 });
 
 var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseWebSockets();
-app.MapRemoteFrame();
+app.MapRemoteFrame("/remote-frame");
 app.Run();
 ```
 
 Production applications should keep the library's default authorization requirement and configure their own authentication. See [the package guide](src/RemoteFrame.AspNetCore/PACKAGE.md). Use `-p:UseRemoteFramePackages=false` only for managed source development and tests. Office requires the aggregate package with the updated worker. Consumers do not need a system LibreOffice installation.
+
+Starting with preview.10, `MapRemoteFrame("/remote-frame")` also serves the embedded viewer. Link to `/remote-frame/viewer?fileId=document` with `target="_blank" rel="noopener"`; the page loads FPS settings, POSTs a session and opens the WebSocket. The Server demo lists file links that open this same packaged page. Settings are collapsed by default; the viewer has no file-selection dropdown. No `wwwroot` assets need copying. The package binds defaults from the host configuration's `RemoteFrame` section, falling back to built-in values for missing settings. Use `AuthorizeFileAsync` and/or `ResolveFileAsync` for host-managed private catalogs, as explained in the package guide.
 
 The demo loads its worker from `bin/<configuration>/net10.0/remote-frame/win-x64/worker`, copied from the runtime NuGet; it does not use a separately published worker under `artifacts`. Release `0.3.0-preview.3` includes the modal-form pointer routing and title-bar close fixes. After rebuilding the distribution and building the demo with default package references, run `pwsh -File tests/TestDemoRuntime.ps1` to verify the selected package version and compare the deployed worker/helper hashes with the fresh build. Restart the server and reopen sessions after updating packages; existing sessions keep their original worker process. `pwsh -File tests/TestPointerInput.ps1` rebuilds the native helper and checks real Windows modal buttons and X on a disposable private desktop without executing Excel macros.
 
@@ -115,7 +118,7 @@ pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Source
 pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Source -SourceBuildReceipt C:/build/source-build.json
 ```
 
-Binary mode is the default and needs no Cygwin/Clang/LibreOffice build. `packaging/libreoffice/binary.lock.json` pins the official MSI URL/checksum. It downloads once, extracts without installing Office, and verifies the archive and full extracted inventory before reuse. Both modes compile our worker/input helper, include licenses/CRT, run bundled-only Writer/Calc edit-save checks and create hash manifests before packaging. Binary releases default to `0.3.0-preview.9`; source releases default to `0.3.0-source.2`. Managed packages follow the selected distribution version. Source mode retains strict recipe/receipt validation and patch provenance; binary provenance never claims a successful local upstream source build.
+Binary mode is the default and needs no Cygwin/Clang/LibreOffice build. `packaging/libreoffice/binary.lock.json` pins the official MSI URL/checksum. It downloads once, extracts without installing Office, and verifies the archive and full extracted inventory before reuse. Both modes compile our worker/input helper, include licenses/CRT, run bundled-only Writer/Calc edit-save checks and create hash manifests before packaging. Binary releases default from `Directory.Build.props`; source releases default to `0.3.0-source.2`. Managed packages follow the selected distribution version. Source mode retains strict recipe/receipt validation and patch provenance; binary provenance never claims a successful local upstream source build.
 
 Then restore/build the demo normally; the native dependency copies its complete payload into build and publish output. To consume a source release, pass `-p:RemoteFramePackageVersion=0.3.0-source.2`. `UseRemoteFramePackages=false` remains a separate managed development switch and does not select or compile an engine. Consumers install the aggregate package only. Existing native/aggregate package versions are never overwritten; choose new `-PackageVersion` and `-ManagedPackageVersion` values for later releases.
 

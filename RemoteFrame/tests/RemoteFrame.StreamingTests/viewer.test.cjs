@@ -15,11 +15,12 @@ const element = id => {
 };
 const sandbox = {document:{getElementById:element,addEventListener:on('document')},fetch:async()=>({ok:true,status:200,json:async()=>[]}),
   ResizeObserver:class { observe(){} },window:{addEventListener:on('window')},setTimeout,clearTimeout,devicePixelRatio:1,innerHeight:1000,
-  WebSocket:{OPEN:1},
+  WebSocket:{OPEN:1},URLSearchParams,location:{search:'',protocol:'http:',host:'localhost'},
   Option:class{},console};
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync('src/RemoteFrame.Server/wwwroot/viewer.js','utf8'),sandbox);
+vm.runInContext(fs.readFileSync('src/RemoteFrame.AspNetCore/Viewer/viewer.js','utf8'),sandbox);
 element('captureWidth').value='1280'; element('captureHeight').value='800'; element('fps').value='10';
+element('streamWidth').value='1280'; element('streamHeight').value='800';
 let config = vm.runInContext('requestedConfiguration()',sandbox);
 assert.equal(config.streamWidth,640); assert.equal(config.streamHeight,400);
 sandbox.devicePixelRatio=4;

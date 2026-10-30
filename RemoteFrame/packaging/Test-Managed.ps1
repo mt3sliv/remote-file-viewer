@@ -10,12 +10,14 @@ try {
     foreach ($test in 'RemoteFrame.ApplicationTests','RemoteFrame.RuntimeTests','RemoteFrame.StreamingTests') {
         Run-DotNet run --project "tests/$test" -c Release "-p:Version=$Version"
     }
-    & node --test tests/RemoteFrame.StreamingTests/viewer.test.cjs
+    & node --test tests/RemoteFrame.StreamingTests/viewer.test.cjs tests/RemoteFrame.StreamingTests/viewer-lifecycle.test.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Browser input tests failed.' }
     & ./tests/TestReleasePolicy.ps1
     New-Item -ItemType Directory -Force artifacts/packages | Out-Null
     foreach ($project in 'RemoteFrame.Core','RemoteFrame.Rendering','RemoteFrame.AspNetCore') {
         Run-DotNet pack "src/$project" -c Release -o artifacts/packages "-p:Version=$Version"
     }
-    Run-DotNet run --project tests/RemoteFrame.PackageSmoke -c Release "-p:Version=$Version" "-p:RemoteFramePackageVersion=$Version"
+    & ./tests/TestPackageReadmes.ps1 -Version $Version
+    $smokeCache = Join-Path $root ('artifacts/managed-smoke-cache/' + [Guid]::NewGuid().ToString('N'))
+    Run-DotNet run --project tests/RemoteFrame.PackageSmoke -c Release "-p:Version=$Version" "-p:RemoteFramePackageVersion=$Version" "-p:RestorePackagesPath=$smokeCache"
 } finally { Pop-Location }

@@ -1,20 +1,25 @@
-REMOTEFRAME - PHASE 1
+REMOTEFRAME VIEWER
 =====================
 
 This content exists only in the server filesystem.
 The browser receives rendered PNG pixels, not file bytes.
 
-Supported in Phase 1:
+Text preview:
 - .txt, .log, .md, .csv, .json, .cs, .xml, .yaml, .yml
 - Scroll using mouse wheel or keyboard
 - Multiple authenticated sessions, isolated by login identity
-- One server-side allowlist of file identifiers
+- Server-side file authorization and catalog resolution
 
-Not included yet:
-- Remote native applications
-- PDF, Office, audio/video providers
-- Writable text editing / saved changes
-- Advanced identity provider, audit logs or containers
+Viewer controls:
+- Selected file, FPS limit, capture size and stream fitting
+- Authenticated API and WebSocket routes share the same prefix
+- Text is read-only; its Save button is disabled
+
+Office preview:
+- The Windows x64 package includes a private-desktop worker
+- Supported installed Excel/Word or bundled LibreOffice
+- Editable Office sessions can save back to the server file
+- Linux supports managed text rendering, not native Office
 
 Scroll down to see more lines.
 

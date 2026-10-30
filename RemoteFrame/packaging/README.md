@@ -2,7 +2,7 @@
 
 The native payload is built by RemoteFrame maintainers, not by consuming web applications. Windows x64 artifacts are generated locally under ignored artifacts/; the repository tracks their worker source and packaging recipes. Linux/ARM64 artifacts are not implemented. This project packages a completed runtime tree; it does not turn the LibreOffice source repository into a working runtime by itself.
 
-Each supported target has a runtime package: `RemoteFrame.Office.Runtime.win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`. The aggregate package `RemoteFrame.Office.Windows` version `0.3.0-source.1` depends on managed `0.3.0-preview.1` and the matching win-x64 runtime. Those native and aggregate artifacts are not available until the source-build packaging phase succeeds. Consumers install that one package. No packages have been published externally.
+Published NuGet packages currently provide the Windows x64 runtime only. Install `RemoteFrame.Office.Windows` for the managed integration and complete runtime. Its `RemoteFrame.Office.Runtime.win-x64` coordinator pins size-bounded `PartNNN` dependencies; build/publish reassemble the original tree. The platform names accepted by the validator are not claims that Windows ARM64 or Linux native packages exist. Consumer-facing package READMEs are maintained separately in `OFFICE-WINDOWS-PACKAGE.md` and `RUNTIME-PACKAGE.md`; this document describes maintainer build procedures.
 
 ## Staging contract
 

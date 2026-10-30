@@ -37,7 +37,9 @@ New-Item -ItemType Directory -Force $invalid | Out-Null
 $zip = [IO.Compression.ZipFile]::Open("$invalid/RemoteFrame.Core.$version.nupkg",[IO.Compression.ZipArchiveMode]::Create)
 try {
     $writer = [IO.StreamWriter]::new($zip.CreateEntry('RemoteFrame.Core.nuspec').Open())
-    try { $writer.Write("<package><metadata><id>RemoteFrame.Core</id><version>$version</version><license type='file'>license.txt</license></metadata></package>") } finally { $writer.Dispose() }
+    try { $writer.Write("<package><metadata><id>RemoteFrame.Core</id><version>$version</version><license type='file'>license.txt</license><readme>README.md</readme></metadata></package>") } finally { $writer.Dispose() }
+    $writer = [IO.StreamWriter]::new($zip.CreateEntry('README.md').Open())
+    try { $writer.Write("# RemoteFrame.Core`n`nTEST FIXTURE ONLY") } finally { $writer.Dispose() }
     $writer = [IO.StreamWriter]::new($zip.CreateEntry('license.txt').Open())
     try { $writer.Write('x' * 1100000) } finally { $writer.Dispose() }
 } finally { $zip.Dispose() }

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-remote-frame-base="{{BASE}}" data-csrf-header="{{CSRF_HEADER}}" data-csrf-token="{{CSRF_TOKEN}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RemoteFrame viewer</title>
+  <link rel="stylesheet" href="{{BASE}}/viewer.css">
+  <script src="{{BASE}}/viewer.js" defer></script>
+</head>
+<body>
+  <header><h1>RemoteFrame viewer</h1><p>View a server-managed file. Documents stay on the server; this page receives rendered images.</p></header>
+  <section id="viewerControls" aria-label="File and session">
+    <div class="selected-file">Selected file <output id="selectedFile">No file selected</output></div>
+    <button id="open" type="button" disabled>Open file</button>
+    <button id="save" type="button" disabled>Save document</button>
+    <button id="close" type="button">Close session</button>
+  </section>
+  <details id="frameSettings">
+    <summary>Viewer settings</summary>
+    <section aria-label="Frame settings">
+    <label>FPS limit <input id="fps" type="number" min="1" max="30" value="5"></label>
+    <label>Capture width <input id="captureWidth" type="number" min="320" max="3840" value="1280"></label>
+    <label>Capture height <input id="captureHeight" type="number" min="200" max="2160" value="800"></label>
+    <label>Stream width <input id="streamWidth" type="number" min="160" max="3840" value="1280"></label>
+    <label>Stream height <input id="streamHeight" type="number" min="100" max="2160" value="800"></label>
+    <label class="toggle"><input id="fitViewport" type="checkbox"> Fit stream to viewport</label>
+    <button id="applySettings" type="button">Apply settings</button>
+    </section>
+  </details>
+  <p id="status" role="status" aria-live="polite">Loading viewer settings…</p>
+  <canvas id="screen" width="960" height="600" tabindex="0" aria-label="Remote file image"></canvas>
+</body>
+</html>

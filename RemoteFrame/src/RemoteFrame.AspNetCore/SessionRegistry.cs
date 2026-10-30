@@ -75,6 +75,7 @@ internal sealed class SessionRegistry : BackgroundService
 
     internal sealed class SerializedSession(IRenderSession renderer, FrameConfiguration initialConfiguration) : IRenderSession
     {
+        public bool CanSave => renderer.CanSave;
         private readonly SemaphoreSlim operation = new(1);
         private bool disposed;
         private FrameConfiguration configuration = initialConfiguration;

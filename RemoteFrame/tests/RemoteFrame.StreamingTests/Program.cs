@@ -11,11 +11,28 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using RemoteFrame.AspNetCore;
 using RemoteFrame.Core;
 using RemoteFrame.Rendering;
 
 static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS: " + message); }
+static RemoteFrameOptions BoundSettings(string json, Action<RemoteFrameOptions>? configure = null)
+{
+    using var data = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+    var configuration = new ConfigurationBuilder().AddJsonStream(data).Build();
+    var services = new ServiceCollection();
+    services.AddSingleton<IConfiguration>(configuration);
+    services.AddRemoteFrame(configure);
+    using var provider = services.BuildServiceProvider();
+    return provider.GetRequiredService<IOptions<RemoteFrameOptions>>().Value;
+}
+Check(BoundSettings("{}").DefaultFrameConfiguration == new FrameConfiguration(), "Missing appsettings section uses built-in frame defaults");
+Check(BoundSettings("{\"RemoteFrame\":{\"DefaultFrameConfiguration\":{\"FramesPerSecond\":14}}}").DefaultFrameConfiguration == new FrameConfiguration(FramesPerSecond:14), "Partial appsettings overrides only supplied defaults");
+var fromConfig = BoundSettings("{\"RemoteFrame\":{\"FitStreamToViewport\":true,\"DefaultFrameConfiguration\":{\"FramesPerSecond\":18,\"CaptureWidth\":960,\"CaptureHeight\":600,\"StreamWidth\":480,\"StreamHeight\":300}}}");
+Check(fromConfig.FitStreamToViewport && fromConfig.DefaultFrameConfiguration == new FrameConfiguration(18,960,600,480,300), "Appsettings controls FPS, capture, stream size and fitting");
+Check(BoundSettings("{\"RemoteFrame\":{\"DefaultFrameConfiguration\":{\"FramesPerSecond\":14}}}", o => o.DefaultFrameConfiguration = new(FramesPerSecond:20)).DefaultFrameConfiguration.FramesPerSecond == 20, "Explicit host configuration overrides appsettings");
 static void Reject(FrameConfiguration value) {
     try { value.Validate(); } catch (ArgumentException) { return; }
     throw new Exception("Invalid settings accepted");
@@ -68,12 +85,13 @@ try {
     builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Warning);
     builder.WebHost.UseUrls("http://127.0.0.1:0");
     builder.Services.AddSingleton<IRenderProvider>(fake);
-    builder.Services.AddRemoteFrame(o => { o.RequireAuthorization = false; o.DefaultFrameConfiguration = config; o.MaxFramesPerSecond = 20; o.MaxPixels = 1000000; o.Files.Add("text",textFile); o.Files.Add("fake", file); });
+    builder.Services.AddRemoteFrame(o => { o.RequireAuthorization = false; o.EnableViewer = false; o.DefaultFrameConfiguration = config; o.MaxFramesPerSecond = 20; o.MaxPixels = 1000000; o.Files.Add("text",textFile); o.Files.Add("fake", file); });
     await using var app = builder.Build();
     app.Use(async (ctx,next) => { ctx.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, ctx.Request.Headers["X-Owner"].FirstOrDefault() ?? "alice")])); await next(ctx); });
     app.UseWebSockets(); app.MapRemoteFrame(); await app.StartAsync();
     var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
     using var http = new HttpClient { BaseAddress = new Uri(address) };
+    Check((await http.GetAsync("/viewer")).StatusCode == HttpStatusCode.NotFound, "Embedded viewer can be disabled without changing API routes");
     var unknown = await http.PostAsJsonAsync("/api/sessions", new {fileId=textFile});
     Check(unknown.StatusCode == HttpStatusCode.NotFound, "Client paths cannot bypass file allowlist");
     var invalid = await http.PostAsJsonAsync("/api/sessions", new {fileId="fake", configuration=config with { FramesPerSecond=21 }});
@@ -85,6 +103,7 @@ try {
     created.EnsureSuccessStatusCode();
     var data = await created.Content.ReadFromJsonAsync<Opened>(); var id = data!.Id;
     Check(data.Configuration == config, "Server defaults negotiated in session response");
+    Check(data.CanSave, "Save capability comes from the renderer, not an opaque file ID extension");
     (await http.PutAsJsonAsync($"/api/sessions/{id}/configuration", config)).EnsureSuccessStatusCode();
     (await http.PutAsJsonAsync($"/api/sessions/{id}/configuration", config with { FramesPerSecond = 20 })).EnsureSuccessStatusCode();
     Check(fake.ConfigureCount == 1, "Identical and FPS-only settings do not reconfigure renderer");
@@ -116,7 +135,7 @@ try {
     await app.StopAsync();
 } finally { File.Delete(file); File.Delete(textFile); }
 Console.WriteLine("All streaming checks passed.");
-record Opened(string Id, FrameConfiguration Configuration);
+record Opened(string Id, FrameConfiguration Configuration, bool CanSave);
 sealed class TestProvider : IRenderProvider {
     public int OpenCount;
     public int ConfigureCount;
@@ -124,6 +143,7 @@ sealed class TestProvider : IRenderProvider {
     public bool CanOpen(string path) => !path.EndsWith(".txt");
     public ValueTask<IRenderSession> OpenAsync(string path,CancellationToken ct) { OpenCount++; return ValueTask.FromResult<IRenderSession>(new Session(this)); }
     sealed class Session(TestProvider parent) : IRenderSession {
+        public bool CanSave => true;
         FrameConfiguration config = new();
         public ValueTask ConfigureAsync(FrameConfiguration value,CancellationToken ct) { parent.ConfigureCount++; config=value; return ValueTask.CompletedTask; }
         public async ValueTask<Frame> CaptureAsync(CancellationToken ct) { await Task.Delay(40,ct); return new(PngFrameEncoder.EncodeBgra(new byte[config.CaptureWidth*config.CaptureHeight*4],config.CaptureWidth,config.CaptureHeight,config.StreamWidth,config.StreamHeight),config.StreamWidth,config.StreamHeight); }

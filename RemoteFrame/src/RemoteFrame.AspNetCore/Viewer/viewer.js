@@ -3,22 +3,23 @@ const $ = id => document.getElementById(id);
 const canvas = $('screen');
 const context = canvas.getContext('2d');
 let socket = null, sessionId = null;
+let generation = 0, opening = false, leaving = false;
+const page = document.documentElement?.dataset || {};
+const base = page.remoteFrameBase || '';
+const selectedFileId = new URLSearchParams(location.search || '').get('fileId');
+const endpoint = path => base + path;
 const status = message => { $('status').textContent = message; };
 async function api(url, options={}) {
-  const response = await fetch(url, {
+  const csrf = options.method && options.method !== 'GET' && page.csrfHeader && page.csrfToken
+    ? {[page.csrfHeader]:page.csrfToken} : {};
+  const response = await fetch(endpoint(url), {
     credentials:'same-origin', ...options,
-    headers: { 'Content-Type':'application/json', ...(options.headers||{}) }
+    headers: { 'Content-Type':'application/json', ...csrf, ...(options.headers||{}) }
   });
   if (!response.ok) throw new Error((await response.json().catch(()=>null))?.error || `Request failed (${response.status})`);
   return response.status === 204 ? null : response.json();
 }
-async function loadFiles() {
-  try {
-    const files = await api('/api/files');
-    $('files').replaceChildren(...files.map(file => new Option(file,file)));
-    status('Choose a sample file. Office edits are saved to the demo output copy.');
-  } catch (e) { status(e.message); }
-}
+$('selectedFile').textContent = selectedFileId || 'No file selected';
 let limits = null;
 async function loadSettings() {
   try {
@@ -29,10 +30,19 @@ async function loadSettings() {
     $('captureWidth').max = limits.maxCaptureWidth;
     $('captureHeight').value = limits.defaults.captureHeight;
     $('captureHeight').max = limits.maxCaptureHeight;
-  } catch (e) { status(e.message); }
+    $('streamWidth').value = limits.defaults.streamWidth;
+    $('streamWidth').max = limits.maxCaptureWidth;
+    $('streamHeight').value = limits.defaults.streamHeight;
+    $('streamHeight').max = limits.maxCaptureHeight;
+    $('fitViewport').checked = limits.fitStreamToViewport === true;
+  } catch (e) { status(e.message); throw e; }
 }
 const settingsReady = loadSettings();
-loadFiles();
+settingsReady.then(() => {
+  $('open').disabled = !selectedFileId || leaving;
+  if (selectedFileId && !leaving) openFile();
+  else status('Open a file from your application’s file list.');
+}).catch(e => status(e.message));
 function requestedConfiguration() {
   const captureWidth = Number($('captureWidth').value), captureHeight = Number($('captureHeight').value);
   // CSS width is stable when the PNG size changes. Bound DPR to avoid excessive captures.
@@ -40,7 +50,8 @@ function requestedConfiguration() {
     ? Math.min(1, Math.max(160, Math.round(canvas.getBoundingClientRect().width * Math.min(devicePixelRatio || 1, 2))) / captureWidth,
         Math.max(100, Math.round(innerHeight * Math.min(devicePixelRatio || 1, 2))) / captureHeight) : 1;
   return {framesPerSecond:Number($('fps').value), captureWidth, captureHeight,
-    streamWidth:Math.max(160, Math.round(captureWidth * ratio)), streamHeight:Math.max(100, Math.round(captureHeight * ratio))};
+    streamWidth:$('fitViewport').checked ? Math.max(160, Math.round(captureWidth * ratio)) : Number($('streamWidth').value),
+    streamHeight:$('fitViewport').checked ? Math.max(100, Math.round(captureHeight * ratio)) : Number($('streamHeight').value)};
 }
 let updating = false, settingsDirty = false;
 async function updateConfiguration() {
@@ -66,33 +77,52 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => { if ($('fitViewport').checked) updateConfiguration(); }, 250);
 });
 async function closeSession() {
+  generation++;
   $('save').disabled=true;
   cancelPointer();
-  if (socket) { socket.close(); socket=null; }
-  if (sessionId) {
-    const id = sessionId; sessionId=null;
-    try { await api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE'}); } catch {}
+  const ws = socket, id = sessionId;
+  socket=null; sessionId=null;
+  if (ws) ws.close();
+  if (id) {
+    try { await api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE',keepalive:true}); } catch {}
   }
 }
 $('close').onclick = async () => { await closeSession(); status('Session closed.'); };
-$('open').onclick = async () => {
+$('open').onclick = openFile;
+async function openFile() {
+  if (opening || leaving) return;
+  opening = true;
+  $('open').disabled = true;
+  let attempt;
   try {
     await closeSession();
+    attempt = generation;
     await settingsReady;
-    status('Opening the selected sample…');
-    const data = await api('/api/sessions',{method:'POST',body:JSON.stringify({fileId:$('files').value,configuration:requestedConfiguration()})});
+    if (attempt !== generation || leaving) return;
+    if (!selectedFileId) { status('Open a file from your application’s file list.'); return; }
+    status('Opening the selected file…');
+    const data = await api('/api/sessions',{method:'POST',body:JSON.stringify({fileId:selectedFileId,configuration:requestedConfiguration()})});
+    if (attempt !== generation || leaving) {
+      await api('/api/sessions/'+encodeURIComponent(data.id),{method:'DELETE',keepalive:true});
+      return;
+    }
     sessionId=data.id;
-    const editable=/\.(docx?|odt|xlsx?|xlsm|ods|pptx?|odp)$/i.test($('files').value);
+    const editable = data.canSave === true;
     const proto=location.protocol==='https:'?'wss:':'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/${encodeURIComponent(sessionId)}`);
+    const ws = new WebSocket(`${proto}//${location.host}${endpoint('/ws/'+encodeURIComponent(sessionId))}`);
     socket=ws;
     ws.binaryType='blob';
-    ws.onopen=()=>{ $('save').disabled=!editable; status(editable ? 'Connected. Click the application to edit. Save updates the demo output copy.' : 'Connected. Read-only text: use the mouse wheel or navigation keys to scroll.');canvas.focus();};
+    ws.onopen=()=>{ if(socket!==ws)return; $('save').disabled=!editable; status(editable ? 'Connected. Click the application to edit. Save updates the server file.' : 'Connected. Use the mouse wheel or navigation keys to scroll.');canvas.focus();};
     ws.onmessage = latestFrameReceiver(ws);
-    ws.onerror=()=>status('WebSocket error.');
-    ws.onclose=()=>{ if(socket===ws) { $('save').disabled=true; status('Viewer connection closed.'); } };
-  } catch(e) { status(e.message); }
-};
+    ws.onerror=()=>{if(socket===ws)status('WebSocket error.');};
+    ws.onclose=()=>{ if(socket===ws) {
+      cancelPointer(); const id=sessionId; socket=null; sessionId=null;
+      if(id) api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE',keepalive:true}).catch(()=>{});
+      $('save').disabled=true; status('Viewer connection closed.');
+    } };
+  } catch(e) { if (attempt === generation) { await closeSession(); status(e.message); } }
+  finally { opening=false; $('open').disabled=leaving || !selectedFileId; }
+}
 function latestFrameReceiver(ws) {
   let decoding = false, pending = null;
   return async event => {
@@ -182,4 +212,4 @@ canvas.addEventListener('blur',cancelPointer);
 window.addEventListener('blur',cancelPointer);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
 $('save').onclick=()=>{sendInput({kind:'save'});status('Save shortcut sent. Check the application for any save or format prompts.');};
-window.addEventListener('pagehide',()=>{cancelPointer();if(socket)socket.close();});
+window.addEventListener('pagehide',()=>{leaving=true;closeSession();});

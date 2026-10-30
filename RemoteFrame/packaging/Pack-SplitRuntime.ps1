@@ -54,7 +54,7 @@ foreach ($relative in $runtimeManifest.licenses | Sort-Object -Unique) {
 [IO.File]::WriteAllText("$work/package-license.txt",$license)
 if ((Get-Item "$work/package-license.txt").Length -ge 1000000) { throw 'NuGet license metadata must be below 1 MB.' }
 [IO.File]::WriteAllText("$work/_._",'')
-Copy-Item "$PSScriptRoot/README.md" "$work/README.md"
+Copy-Item "$PSScriptRoot/RUNTIME-PACKAGE.md" "$work/README.md"
 $commonItems = '<None Include="_._" Pack="true" PackagePath="lib/net10.0/" /><None Include="README.md" Pack="true" PackagePath="/" />'
 $commonItems += $licenseItems -join "`n"
 $dependencies = [Collections.Generic.List[string]]::new()

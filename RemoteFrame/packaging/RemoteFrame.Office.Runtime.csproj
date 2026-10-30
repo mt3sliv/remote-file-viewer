@@ -7,13 +7,13 @@
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <PackageId>RemoteFrame.Office.Runtime.$(OfficeRuntimeIdentifier)</PackageId>
     <Description>Package-owned LibreOffice runtime and RemoteFrame native session worker.</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>RUNTIME-PACKAGE.md</PackageReadmeFile>
     <RuntimeCheckProject>$(MSBuildThisFileDirectory)../tools/RemoteFrame.RuntimeCheck/RemoteFrame.RuntimeCheck.csproj</RuntimeCheckProject>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(OfficePayloadRoot)/**/*" Condition="'$(OfficePayloadRoot)' != ''" Pack="true" PackagePath="tools/remote-frame/$(OfficeRuntimeIdentifier)/" />
     <None Include="RemoteFrame.Office.Runtime.targets" Pack="true" PackagePath="buildTransitive/$(PackageId).targets" />
-    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="RUNTIME-PACKAGE.md" Pack="true" PackagePath="/" />
   </ItemGroup>
   <Target Name="ValidateOfficePayload" BeforeTargets="GenerateNuspec">
     <Error Condition="'$(OfficeRuntimeIdentifier)' != 'win-x64' and '$(OfficeRuntimeIdentifier)' != 'win-arm64' and '$(OfficeRuntimeIdentifier)' != 'linux-x64' and '$(OfficeRuntimeIdentifier)' != 'linux-arm64'" Text="Set OfficeRuntimeIdentifier to a supported Windows/Linux RID." />

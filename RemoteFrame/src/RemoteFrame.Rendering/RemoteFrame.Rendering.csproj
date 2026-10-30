@@ -1,12 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
-		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
+		<Description>Portable read-only text rendering, PNG encoding and BGRA downsampling for RemoteFrame on .NET 10.</Description>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 	<ItemGroup>
-		<None Include="../../README.md" Pack="true" PackagePath="/" />
+		<None Include="PACKAGE.md" Pack="true" PackagePath="/" />
 		<ProjectReference Include="../RemoteFrame.Core/RemoteFrame.Core.csproj" />
 	</ItemGroup>
 </Project>

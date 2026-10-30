@@ -1,6 +1,7 @@
 param([Parameter(Mandatory)][string]$Version,[string]$Directory = "$PSScriptRoot/../artifacts/packages")
 $ErrorActionPreference = 'Stop'
 $Version = & "$PSScriptRoot/Get-ReleaseVersion.ps1" $Version
+& "$PSScriptRoot/../tests/TestPackageReadmes.ps1" -Directory $Directory -Version $Version
 $items = @(foreach ($file in Get-ChildItem $Directory -Filter "*.$Version.nupkg") {
     if ($file.Length -ge 240000000) { throw "Package exceeds the 240 MB release ceiling: $($file.Name)" }
     $zip = [IO.Compression.ZipFile]::OpenRead($file.FullName)

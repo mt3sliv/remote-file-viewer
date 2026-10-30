@@ -31,6 +31,7 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
 
     private sealed class WorkerSession(Process process) : IRenderSession
     {
+        public bool CanSave => true;
         private readonly SemaphoreSlim gate = new(1);
         private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
         private bool disposed;

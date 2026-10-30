@@ -5,6 +5,7 @@ public sealed record InputEvent(string Kind, int Delta = 0, string? Key = null,
 public sealed record Frame(byte[] Png, int Width, int Height);
 public interface IRenderSession : IAsyncDisposable
 {
+    bool CanSave => false;
     ValueTask ConfigureAsync(FrameConfiguration configuration, CancellationToken cancellationToken) =>
         ValueTask.FromException(new NotSupportedException("Provider does not support frame configuration."));
     ValueTask<Frame> CaptureAsync(CancellationToken cancellationToken);

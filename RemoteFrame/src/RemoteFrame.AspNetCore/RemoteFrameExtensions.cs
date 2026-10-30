@@ -18,7 +18,13 @@ public sealed class RemoteFrameOptions
 {
     public bool RequireAuthorization { get; set; } = true;
     public bool EnableOffice { get; set; }
+    public bool EnableViewer { get; set; } = true;
+    public bool FitStreamToViewport { get; set; }
     public bool PreferInstalledOfficeApplications { get; set; } = true;
+    /// <summary>Optional per-request authorization for opaque file IDs. Also filters the configured file list.</summary>
+    public Func<HttpContext, string, CancellationToken, ValueTask<bool>>? AuthorizeFileAsync { get; set; }
+    /// <summary>Optional server-side resolver for a host-managed catalog. Return null for unknown or inaccessible IDs.</summary>
+    public Func<HttpContext, string, CancellationToken, ValueTask<string?>>? ResolveFileAsync { get; set; }
     public FrameConfiguration DefaultFrameConfiguration { get; set; } = new();
     public int MaxFramesPerSecond { get; set; } = 30;
     public int MaxCaptureWidth { get; set; } = 3840;
@@ -30,9 +36,9 @@ public sealed class RemoteFrameOptions
 
 public static class RemoteFrameExtensions
 {
-    public static IServiceCollection AddRemoteFrame(this IServiceCollection services, Action<RemoteFrameOptions> configure)
+    public static IServiceCollection AddRemoteFrame(this IServiceCollection services, Action<RemoteFrameOptions>? configure = null)
     {
-        services.AddOptions<RemoteFrameOptions>().Configure(configure).Validate(o =>
+        services.AddOptions<RemoteFrameOptions>().BindConfiguration("RemoteFrame").Configure(configure ?? (_ => { })).Validate(o =>
         {
             try { o.Validate(o.DefaultFrameConfiguration); return true; }
             catch (ArgumentException) { return false; }
@@ -52,17 +58,30 @@ public static class RemoteFrameExtensions
             routes.RequireAuthorization(policy => policy.RequireAuthenticatedUser()
                 .RequireAssertion(context => !string.IsNullOrWhiteSpace(context.User.FindFirstValue(ClaimTypes.NameIdentifier))));
         else routes.AllowAnonymous();
+        if (options.EnableViewer) RemoteFrameViewer.Map(routes);
         var fileMap = options.Files;
         var logger = endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("RemoteFrame");
-        routes.MapGet("/api/frame-settings", () => Results.Ok(new { defaults = options.DefaultFrameConfiguration,
+        routes.MapGet("/api/frame-settings", () => Results.Ok(new { defaults = options.DefaultFrameConfiguration, fitStreamToViewport = options.FitStreamToViewport,
             maxFramesPerSecond = options.MaxFramesPerSecond, maxCaptureWidth = options.MaxCaptureWidth,
             maxCaptureHeight = options.MaxCaptureHeight, maxPixels = options.MaxPixels }));
-        routes.MapGet("/api/files", () => Results.Ok(fileMap.Keys.OrderBy(x => x)));
+        routes.MapGet("/api/files", async (HttpContext ctx) =>
+        {
+            var allowed = new List<string>();
+            foreach (var id in fileMap.Keys.OrderBy(x => x))
+                if ((options.AuthorizeFileAsync is null || await options.AuthorizeFileAsync(ctx, id, ctx.RequestAborted)) &&
+                    (options.ResolveFileAsync is null || await options.ResolveFileAsync(ctx, id, ctx.RequestAborted) is not null)) allowed.Add(id);
+            return Results.Ok(allowed);
+        });
         routes.MapPost("/api/sessions", async (HttpContext ctx, OpenRequest request,
             SessionRegistry sessions, IEnumerable<IRenderProvider> providers) =>
         {
             if (!SameOrigin(ctx)) return Results.StatusCode(403);
-            if (request.FileId is null || !fileMap.TryGetValue(request.FileId, out var filePath)) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(request.FileId)) return Results.NotFound();
+            if (options.AuthorizeFileAsync is not null && !await options.AuthorizeFileAsync(ctx, request.FileId, ctx.RequestAborted)) return Results.NotFound();
+            var filePath = options.ResolveFileAsync is not null
+                ? await options.ResolveFileAsync(ctx, request.FileId, ctx.RequestAborted)
+                : fileMap.GetValueOrDefault(request.FileId);
+            if (string.IsNullOrWhiteSpace(filePath)) return Results.NotFound();
             var provider = providers.FirstOrDefault(x => x.CanOpen(filePath));
             if (provider is null) return Results.BadRequest(new { error = "No provider supports this extension." });
             if (!File.Exists(filePath)) return Results.NotFound();
@@ -77,7 +96,7 @@ public static class RemoteFrameExtensions
             {
                 await renderer.ConfigureAsync(configuration, ctx.RequestAborted);
                 var id = sessions.Create(Owner(ctx), renderer, configuration);
-                return Results.Ok(new { id, configuration });
+                return Results.Ok(new { id, configuration, canSave = renderer.CanSave });
             }
             catch (NotSupportedException)
             {

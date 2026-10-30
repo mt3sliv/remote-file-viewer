@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageId>RemoteFrame.AspNetCore</PackageId>
-    <Description>Server-side file rendering endpoints and session management for ASP.NET Core.</Description>
+    <Description>Authenticated server-side file rendering endpoints, embedded browser viewer and session management for ASP.NET Core.</Description>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
@@ -12,6 +12,7 @@
     <ProjectReference Include="../RemoteFrame.Core/RemoteFrame.Core.csproj" />
     <ProjectReference Include="../RemoteFrame.Rendering/RemoteFrame.Rendering.csproj" />
     <None Include="PACKAGE.md" Pack="true" PackagePath="/" />
+    <EmbeddedResource Include="Viewer/*" LogicalName="RemoteFrame.Viewer.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
 

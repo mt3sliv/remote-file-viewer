@@ -5,14 +5,14 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <PackageId>RemoteFrame.Office.Windows</PackageId>
     <Description>RemoteFrame ASP.NET Core integration with the bundled Windows x64 Office preview.</Description>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>OFFICE-WINDOWS-PACKAGE.md</PackageReadmeFile>
     <ManagedPackageVersion Condition="'$(ManagedPackageVersion)' == ''">$(Version)</ManagedPackageVersion>
     <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">$(Version)</OfficeRuntimePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RemoteFrame.AspNetCore" Version="$(ManagedPackageVersion)" />
     <PackageReference Include="RemoteFrame.Office.Runtime.win-x64" Version="$(OfficeRuntimePackageVersion)" />
-    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../OFFICE-WINDOWS-PACKAGE.md" Pack="true" PackagePath="/" />
     <None Include="_._" Pack="true" PackagePath="lib/net10.0/" />
   </ItemGroup>
   <Target Name="ExcludeDependencyContentFromPackage" BeforeTargets="_GetPackageFiles">
