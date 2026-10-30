@@ -13,6 +13,7 @@ try {
     & node --test tests/RemoteFrame.StreamingTests/viewer.test.cjs tests/RemoteFrame.StreamingTests/viewer-lifecycle.test.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Browser input tests failed.' }
     & ./tests/TestReleasePolicy.ps1
+    & ./tests/TestReleaseRecovery.ps1
     New-Item -ItemType Directory -Force artifacts/packages | Out-Null
     foreach ($project in 'RemoteFrame.Core','RemoteFrame.Rendering','RemoteFrame.AspNetCore') {
         Run-DotNet pack "src/$project" -c Release -o artifacts/packages "-p:Version=$Version"

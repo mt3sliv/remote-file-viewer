@@ -3,6 +3,15 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      recovery_release_tag:
+        description: 'Existing version tag to recover (leave blank for a normal tag release)'
+        type: string
+        required: false
+      recovery_ci_run_id:
+        description: 'Successful CI run retaining nuget-release for that exact tag commit'
+        type: string
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -14,9 +23,15 @@ defaults:
     working-directory: RemoteFrame
 jobs:
   version:
+    if: github.event_name != 'workflow_dispatch' || inputs.recovery_ci_run_id == ''
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      ci_run_id: ${{ steps.artifact.outputs.run_id }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -30,6 +45,22 @@ jobs:
           if ($env:REF_TYPE -ne 'tag' -or -not $env:REF_NAME.StartsWith('v')) { throw 'Select a v<version> tag to publish.' }
           $version = ./packaging/Get-ReleaseVersion.ps1 $env:REF_NAME.Substring(1)
           "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Find previously verified CI artifact
+        id: artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ((./packaging/Get-ReleaseVersion.ps1) -ne $env:RELEASE_VERSION) { return }
+          try {
+            $headers = @{Authorization="Bearer $env:GITHUB_TOKEN";Accept='application/vnd.github+json'}
+            $url = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=success&event=push&per_page=1"
+            $runs = Invoke-RestMethod $url -Headers $headers -TimeoutSec 30
+            if ($runs.workflow_runs.Count -eq 0) { return }
+            $verified = ./packaging/Resolve-ReleaseRecovery.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:RELEASE_TAG -RunId $runs.workflow_runs[0].id
+            "run_id=$($verified.RunId)" >> $env:GITHUB_OUTPUT
+          } catch { Write-Warning "No reusable CI artifact verified; the bounded native build will run. $($_.Exception.Message)" }
 
   build-managed:
     needs: version
@@ -101,6 +132,9 @@ jobs:
     needs: version
     runs-on: windows-2025
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,17 +142,34 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: RemoteFrame/global.json
+      - name: Reuse verified CI packages for the release commit
+        if: needs.version.outputs.ci_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-release
+          run-id: ${{ needs.version.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: RemoteFrame/artifacts/packages
+      - name: Validate reused version, commit and every package hash
+        if: needs.version.outputs.ci_run_id != ''
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -ValidateOnly
       - uses: actions/cache@v6
+        if: needs.version.outputs.ci_run_id == ''
         with:
           path: RemoteFrame/artifacts/libreoffice-binary
           key: office-win-x64-${{ hashFiles('RemoteFrame/packaging/libreoffice/binary.lock.json') }}
       - name: Binary provenance regressions
+        if: needs.version.outputs.ci_run_id == ''
         run: ./tests/TestBinaryBuild.ps1
       - name: Build and test complete distribution
+        if: needs.version.outputs.ci_run_id == ''
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: ./packaging/Build-Distribution.ps1 -OfficeEngine Binary -PackageVersion $env:RELEASE_VERSION -ManagedPackageVersion $env:RELEASE_VERSION
       - name: Verify packaged demo and complete deployed inventory
+        if: needs.version.outputs.ci_run_id == ''
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
@@ -285,3 +336,52 @@ jobs:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Integration
+
+  recover-verified-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.recovery_ci_run_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: nuget
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - name: Verify source CI run against immutable release tag
+        id: recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.recovery_release_tag }}
+          CI_RUN_ID: ${{ inputs.recovery_ci_run_id }}
+        run: |
+          $verified = ./packaging/Resolve-ReleaseRecovery.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:RELEASE_TAG -RunId $env:CI_RUN_ID
+          "version=$($verified.Version)" >> $env:GITHUB_OUTPUT
+          "commit=$($verified.Commit)" >> $env:GITHUB_OUTPUT
+          "run_id=$($verified.RunId)" >> $env:GITHUB_OUTPUT
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-release
+          run-id: ${{ steps.recovery.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: RemoteFrame/artifacts/packages
+      - name: Verify artifact version, release commit and hashes
+        env:
+          RELEASE_VERSION: ${{ steps.recovery.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.recovery.outputs.commit }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -ExpectedCommit $env:RELEASE_COMMIT -ValidateOnly
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Complete release from verified artifacts, skipping existing versions
+        env:
+          RELEASE_VERSION: ${{ steps.recovery.outputs.version }}
+          RELEASE_COMMIT: ${{ steps.recovery.outputs.commit }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -ExpectedCommit $env:RELEASE_COMMIT

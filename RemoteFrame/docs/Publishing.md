@@ -82,6 +82,19 @@ failed publish job to reuse the same verified artifacts, with already uploaded
 versions skipped. Dependent convenience packages stay blocked until their required
 groups succeed.
 
+For matching source/version commits, the release workflow first looks for a
+successful CI run retaining `nuget-release`. It verifies the CI workflow identity,
+repository, tag commit and artifact availability, then verifies the downloaded
+manifest and every package hash. This reuses the complete engine verification
+already performed by CI and avoids a cold archive download on the tag runner.
+
+To recover an interrupted release, manually run `publish.yml` on `dev`, supplying
+`recovery_release_tag` (for example `v0.3.0-preview.11`) and `recovery_ci_run_id`
+(a successful CI run for that exact tag commit). Recovery verifies the tag against
+the run, downloads its retained artifact and validates version, commit and hashes
+before requesting a publishing key. It publishes the verified artifact with
+existing package versions skipped. No tag is moved and no packages are rebuilt.
+
 Dependencies are uploaded before their coordinators. NuGet.org may take time
 to index new packages after upload; the action does not claim immediate search
 visibility. Local validation uses `-ValidateOnly` and never obtains a publishing key.

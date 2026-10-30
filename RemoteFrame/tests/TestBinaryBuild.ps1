@@ -40,3 +40,31 @@ Reject { Assert-BinaryBuildReceipt $path $lockPath } 'Changed archive checksum'
 Reject { & "$root/packaging/BuildWindowsRuntime.ps1" -EngineMode Source -BinaryBuildReceipt $path -VcRedistDirectory $fixture -MicrosoftNoticesPath $archive } 'Binary receipt in source mode'
 Reject { & "$root/packaging/BuildWindowsRuntime.ps1" -EngineMode Binary -SourceBuildReceipt $path -VcRedistDirectory $fixture -MicrosoftNoticesPath $archive } 'Source receipt in binary mode'
 Write-Output 'All binary pipeline checks passed.'
+
+Import-Module "$root/packaging/libreoffice/BinaryDownload.psm1" -Force
+$download = "$fixture/download.part"
+$content = 'VERIFIED DOWNLOAD FIXTURE'
+$digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($content)))
+$state = @{ count=0 }
+$transport = {
+    param($url,$path)
+    $state.count++
+    if ($state.count -eq 1) { throw 'Simulated stalled connection' }
+    [IO.File]::WriteAllText($path,$content)
+}.GetNewClosure()
+Invoke-VerifiedBinaryDownload -Uri 'https://example.invalid/fixture' -Destination $download -Sha256 $digest -Transport $transport -RetryDelaySeconds 0
+if ($state.count -ne 2 -or (Get-FileDigest $download) -ne $digest) { throw 'Download retry did not preserve checksum verification.' }
+$state.count = 0
+$badTransport = { param($url,$path) $state.count++; [IO.File]::WriteAllText($path,'CORRUPTED DOWNLOAD') }.GetNewClosure()
+Reject { Invoke-VerifiedBinaryDownload -Uri 'https://example.invalid/fixture' -Destination $download -Sha256 $digest -Transport $badTransport -RetryDelaySeconds 0 } 'Repeated checksum failures'
+if ($state.count -ne 3) { throw 'Download attempts were not bounded.' }
+$start = [Diagnostics.ProcessStartInfo]::new('pwsh')
+$start.UseShellExecute = $false
+$start.CreateNoWindow = $true
+foreach ($argument in '-NoLogo','-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30') { $start.ArgumentList.Add($argument) }
+$child = [Diagnostics.Process]::Start($start)
+try {
+    Reject { Wait-BinaryExtraction -Process $child -TimeoutSeconds 1 } 'Stalled extraction'
+    if (-not $child.HasExited) { throw 'Timed-out extraction process was not stopped.' }
+} finally { if (-not $child.HasExited) { $child.Kill($true) }; $child.Dispose() }
+Write-Output 'PASS: Download retries are bounded, checksums remain mandatory, and stalled extraction is terminated.'

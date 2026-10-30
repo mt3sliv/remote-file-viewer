@@ -1,12 +1,13 @@
 param([Parameter(Mandatory)][string]$Version,[string]$Directory = "$PSScriptRoot/../artifacts/packages",[switch]$ValidateOnly,
-    [ValidateSet('All','Managed','Worker','LibreOffice','Integration')][string]$Group = 'All')
+    [ValidateSet('All','Managed','Worker','LibreOffice','Integration')][string]$Group = 'All',
+    [string]$ExpectedCommit = $env:GITHUB_SHA)
 $ErrorActionPreference = 'Stop'
 $Version = & "$PSScriptRoot/Get-ReleaseVersion.ps1" $Version
 $name = if ($Group -eq 'All') { 'release.json' } else { "release-$Group.json" }
 $manifest = Get-Content "$Directory/$name" -Raw | ConvertFrom-Json
 if ($Group -ne 'All' -and $manifest.group -ne $Group) { throw 'Artifact group does not match this publish job.' }
 if ($manifest.version -ne $Version) { throw 'Artifact version does not match the release tag.' }
-if ($env:GITHUB_SHA -and $manifest.commit -ne $env:GITHUB_SHA) { throw 'Artifacts came from a different commit.' }
+if ($ExpectedCommit -and ($ExpectedCommit -notmatch '^[a-fA-F0-9]{40}$' -or $manifest.commit -ne $ExpectedCommit)) { throw 'Artifacts came from a different commit.' }
 $policy = & "$PSScriptRoot/Get-ReleasePackagePolicy.ps1" -Group $Group
 $order = $policy.Order
 foreach ($required in $policy.Required) {

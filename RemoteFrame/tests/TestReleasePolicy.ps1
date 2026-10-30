@@ -23,6 +23,7 @@ $manifest = @{version=$version;commit=(& git rev-parse HEAD);packages=$entries}
 function Save-Manifest { $manifest | ConvertTo-Json -Depth 5 | Set-Content "$test/release.json" }
 Save-Manifest
 & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -ValidateOnly
+Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -ValidateOnly -ExpectedCommit ('0' * 40) } 'Different expected release commit'
 $entries[0].sha256 = '0' * 64; Save-Manifest
 Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -ValidateOnly } 'Changed artifact hash'
 $entries[0].sha256 = (Get-FileHash "$test/$($entries[0].file)").Hash

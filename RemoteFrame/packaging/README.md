@@ -71,6 +71,13 @@ The current source engine compiled and linked but failed `VclFiltersTest::testCV
 
 ## Package with upstream binaries (default)
 
+Cold preparation reports download and MSI extraction separately. Downloads use up
+to three bounded attempts, with a 30-second connection limit, a 10-minute transfer
+limit and stalled-transfer detection. The pinned SHA-256 remains mandatory before
+promoting an archive into the cache. Administrative MSI extraction has a 20-minute
+limit with progress messages and a retained diagnostic log. An interrupted image
+does not become a verified cache receipt.
+
 Run `pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Binary` (the switch can be omitted). `libreoffice/binary.lock.json` pins the official Windows x64 MSI and SHA-256 verified against Microsoft's winget manifest. `Prepare-WindowsBinary.ps1` verifies the download, creates an administrative image inside `artifacts/libreoffice-binary` without installing/registering Office, and writes a receipt binding its extracted file inventory to that archive. Cached inputs are reverified on reuse.
 
 `BuildWindowsRuntime.ps1 -EngineMode Binary -BinaryBuildReceipt <path>` validates the receipt, rebuilds the worker/input helper, stages a fresh payload, runs bundled-only Writer/Calc edit-save checks, includes provenance/notices and packs managed/runtime/aggregate NuGets. Source mode accepts only `-SourceBuildReceipt`. Receipt types cannot be substituted. Binary provenance records the official archive and our smoke checks, not a successful local upstream source build. Binary mode needs .NET 10, PowerShell 7 and Visual Studio C++ tools for our small input helper; no Cygwin or LibreOffice compiler is used. Runtime/notices paths are discovered or supplied explicitly.

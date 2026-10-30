@@ -4,14 +4,14 @@ $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'Preparing the Windows binary runtime requires Windows.' }
 Import-Module (Join-Path $PSScriptRoot 'SourceBuild.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'BinaryBuild.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BinaryDownload.psm1') -Force
 $lock = Get-BinaryLock
 $CacheRoot = [IO.Path]::GetFullPath($CacheRoot)
 New-Item -ItemType Directory -Force $CacheRoot | Out-Null
 $archive = Join-Path $CacheRoot ([IO.Path]::GetFileName(([Uri]$lock.Value.url).AbsolutePath))
 if (-not (Test-Path -LiteralPath $archive)) {
     $download = "$archive.download"
-    Invoke-WebRequest -Uri $lock.Value.url -OutFile $download
-    if ((Get-FileDigest $download) -ne $lock.Value.sha256) { throw 'Downloaded LibreOffice archive failed checksum verification.' }
+    Invoke-VerifiedBinaryDownload -Uri $lock.Value.url -Destination $download -Sha256 $lock.Value.sha256
     Move-Item -LiteralPath $download -Destination $archive
 }
 if ((Get-FileDigest $archive) -ne $lock.Value.sha256) { throw 'Cached LibreOffice archive failed checksum verification; it will not be used.' }
@@ -29,8 +29,12 @@ $extract = Join-Path $job $attempt
 New-Item -ItemType Directory -Force $extract | Out-Null
 $log = Join-Path $job "$attempt.log"
 # /a creates an administrative image; it does not install/register Office on this host.
-$process = Start-Process -FilePath "$env:WINDIR/System32/msiexec.exe" -WindowStyle Hidden -Wait -PassThru -ArgumentList @('/a',"`"$archive`"",'/qn',"TARGETDIR=`"$extract`"",'/L*v',"`"$log`"")
-if ($process.ExitCode -ne 0) { throw "LibreOffice administrative extraction failed ($($process.ExitCode)); see $log" }
+Write-Host "Extracting the verified LibreOffice MSI (20-minute limit). Log: $log"
+$process = Start-Process -FilePath "$env:WINDIR/System32/msiexec.exe" -WindowStyle Hidden -PassThru -ArgumentList @('/a',"`"$archive`"",'/qn',"TARGETDIR=`"$extract`"",'/L*v',"`"$log`"")
+try {
+    $exitCode = Wait-BinaryExtraction -Process $process
+    if ($exitCode -ne 0) { throw "LibreOffice administrative extraction failed ($exitCode); see $log" }
+} finally { $process.Dispose() }
 $engines = @(Get-ChildItem -LiteralPath $extract -Recurse -Filter soffice.exe -File)
 if ($engines.Count -ne 1 -or $engines[0].Directory.Name -ne 'program') { throw 'Cannot identify the extracted LibreOffice directory.' }
 $output = $engines[0].Directory.Parent.FullName
