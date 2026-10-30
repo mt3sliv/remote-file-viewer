@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace RemoteFrame.AspNetCore;
 
-/// <summary>Validates a package-owned Office runtime without consulting PATH or installed applications.</summary>
+/// <summary>Validates package-owned Office components without consulting PATH or installed applications.
+/// EnginePath is empty when only the standalone worker is deployed.</summary>
 public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Version, string EnginePath, string WorkerPath)
 {
     private static readonly Lazy<BundledOfficeRuntime> Current = new(() => Validate(
@@ -28,15 +29,41 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
     public static BundledOfficeRuntime Validate(string directory, string expectedRuntimeIdentifier, bool verifyAllFiles = true)
     {
         var root = Path.GetFullPath(directory);
+        if (Directory.Exists(Path.Combine(root, "components", "worker")))
+        {
+            foreach (var path in new[] { root, Path.Combine(root, "components"), Path.Combine(root, "components", "worker"), Path.Combine(root, "components", "libreoffice") })
+                if (Directory.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("Runtime component directories must not be links.");
+            var workerRuntime = ValidatePayload(Path.Combine(root, "components", "worker"), expectedRuntimeIdentifier, verifyAllFiles);
+            if (workerRuntime.EnginePath.Length != 0 || workerRuntime.WorkerPath.Length == 0)
+                throw new InvalidDataException("Expected a standalone worker runtime.");
+            var libreRoot = Path.Combine(root, "components", "libreoffice");
+            if (!Directory.Exists(libreRoot)) return workerRuntime;
+            var libre = ValidatePayload(libreRoot, expectedRuntimeIdentifier, verifyAllFiles);
+            if (libre.EnginePath.Length == 0 || libre.WorkerPath.Length != 0)
+                throw new InvalidDataException("Expected a standalone LibreOffice runtime.");
+            return workerRuntime with { EnginePath = libre.EnginePath };
+        }
+        return ValidatePayload(root, expectedRuntimeIdentifier, verifyAllFiles);
+    }
+
+    private static BundledOfficeRuntime ValidatePayload(string root, string expectedRuntimeIdentifier, bool verifyAllFiles)
+    {
         var manifestPath = Path.Combine(root, "runtime.json");
         if (!File.Exists(manifestPath))
-            throw new InvalidOperationException($"Bundled Office runtime '{expectedRuntimeIdentifier}' is missing. Expected manifest: {manifestPath}. Restore and deploy RemoteFrame.Office.Windows with its native runtime dependency. The payload must include the rebuilt configuration-capable worker and input helper, even when installed applications are preferred.");
+            throw new InvalidOperationException($"Office worker runtime '{expectedRuntimeIdentifier}' is missing. Expected manifest: {manifestPath}. Restore and deploy RemoteFrame.Office.Windows. For bundled LibreOffice fallback, use RemoteFrame.Office.Windows.WithLibreOffice.");
         var manifest = JsonSerializer.Deserialize<RuntimeManifest>(File.ReadAllText(manifestPath),
             new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? throw new InvalidDataException("Office runtime manifest is empty.");
-        if (manifest.SchemaVersion != 1 || manifest.RuntimeIdentifier != expectedRuntimeIdentifier ||
+        var component = manifest.SchemaVersion == 2 ? manifest.Component : null;
+        if ((manifest.SchemaVersion != 1 && (manifest.SchemaVersion != 2 || component is not ("worker" or "libreoffice"))) || manifest.RuntimeIdentifier != expectedRuntimeIdentifier ||
             string.IsNullOrWhiteSpace(manifest.Version) || string.IsNullOrWhiteSpace(manifest.SourceRevision) ||
             manifest.Files is not { Count: > 0 } || manifest.Licenses is not { Length: > 0 })
             throw new InvalidDataException("Office runtime manifest is incomplete or targets a different platform.");
+        if ((component != "worker" && string.IsNullOrWhiteSpace(manifest.Engine)) ||
+            (component != "libreoffice" && string.IsNullOrWhiteSpace(manifest.Worker)) ||
+            (component == "worker" && manifest.Engine is not null) || (component == "libreoffice" && manifest.Worker is not null))
+            throw new InvalidDataException("Runtime entry points do not match its component.");
+        var entryPoints = new[] { manifest.Engine, manifest.Worker }.OfType<string>().ToArray();
 
         string Resolve(string relative)
         {
@@ -55,7 +82,7 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
             return path;
         }
 
-        var requiredFiles = manifest.Licenses.Concat([manifest.Engine, manifest.Worker]).ToHashSet();
+        var requiredFiles = manifest.Licenses.Concat(entryPoints).ToHashSet();
         if (manifest.Files.ContainsKey("worker/RemoteFrame.InputHook.dll")) requiredFiles.Add("worker/RemoteFrame.InputHook.dll");
         var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var (relative, expectedHash) in manifest.Files)
@@ -68,7 +95,7 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
             if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"Office runtime integrity check failed: {relative}");
         }
-        foreach (var required in manifest.Licenses.Concat([manifest.Engine, manifest.Worker]))
+        foreach (var required in manifest.Licenses.Concat(entryPoints))
             if (required is null || !manifest.Files.ContainsKey(required))
                 throw new InvalidDataException("Runtime engine, worker and license notices must be listed in the manifest.");
         void CheckInventory(string directoryPath)
@@ -85,13 +112,14 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
             }
         }
         if (verifyAllFiles) CheckInventory(root);
-        var engine = Resolve(manifest.Engine!);
-        var worker = Resolve(manifest.Worker!);
+        var engine = manifest.Engine is null ? "" : Resolve(manifest.Engine);
+        var worker = manifest.Worker is null ? "" : Resolve(manifest.Worker);
         if (expectedRuntimeIdentifier.StartsWith("linux-", StringComparison.Ordinal) && !OperatingSystem.IsWindows())
         {
             var executable = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
-            if ((File.GetUnixFileMode(engine) & executable) == 0 || (File.GetUnixFileMode(worker) & executable) == 0)
-                throw new InvalidDataException("Linux Office engine and worker must retain executable permissions.");
+            foreach (var path in new[] { engine, worker })
+                if (path.Length != 0 && (File.GetUnixFileMode(path) & executable) == 0)
+                    throw new InvalidDataException("Linux Office engine and worker must retain executable permissions.");
         }
         return new BundledOfficeRuntime(expectedRuntimeIdentifier, manifest.Version!, engine, worker);
     }
@@ -99,6 +127,7 @@ public sealed record BundledOfficeRuntime(string RuntimeIdentifier, string Versi
     private sealed class RuntimeManifest
     {
         public int SchemaVersion { get; set; }
+        public string? Component { get; set; }
         public string? RuntimeIdentifier { get; set; }
         public string? Version { get; set; }
         public string? SourceRevision { get; set; }

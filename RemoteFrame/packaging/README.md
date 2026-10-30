@@ -2,9 +2,20 @@
 
 The native payload is built by RemoteFrame maintainers, not by consuming web applications. Windows x64 artifacts are generated locally under ignored artifacts/; the repository tracks their worker source and packaging recipes. Linux/ARM64 artifacts are not implemented. This project packages a completed runtime tree; it does not turn the LibreOffice source repository into a working runtime by itself.
 
-Published NuGet packages currently provide the Windows x64 runtime only. Install `RemoteFrame.Office.Windows` for the managed integration and complete runtime. Its `RemoteFrame.Office.Runtime.win-x64` coordinator pins size-bounded `PartNNN` dependencies; build/publish reassemble the original tree. The platform names accepted by the validator are not claims that Windows ARM64 or Linux native packages exist. Consumer-facing package READMEs are maintained separately in `OFFICE-WINDOWS-PACKAGE.md` and `RUNTIME-PACKAGE.md`; this document describes maintainer build procedures.
+Published native packages currently target Windows x64 only. Starting with preview.11, `RemoteFrame.Office.Windows` supplies integration and the worker for installed applications; `RemoteFrame.Office.Windows.WithLibreOffice` also includes the optional engine. `Pack-OfficeComponents.ps1` creates independent worker/LibreOffice manifests and size-bounded dependency parts. Build/publish deploy both trees under `remote-frame/win-x64/components` when selected. The old runtime ID remains a compatibility coordinator for both. Platform names accepted by the validator do not claim Windows ARM64 or Linux native packages exist. Consumer-facing READMEs are maintained separately from this build guide.
 
 ## Staging contract
+
+For a worker-only build with no LibreOffice download or staging, run
+`pwsh -File packaging/Build-WindowsWorker.ps1 -Version <fresh-version>`.
+It builds the self-contained worker/input helper and its independent manifest,
+then packs `RemoteFrame.Office.Worker.Runtime.win-x64` and its dependency parts.
+Pack the managed libraries and `RemoteFrame.Office.Windows` at matching versions
+to create the smaller integration distribution, or use
+`pwsh -File packaging/Build-WorkerDistribution.ps1 -Version <fresh-version>` to do
+all of this and verify a clean worker-only consumer's build and publish outputs.
+The complete distribution command
+also packs both components and `RemoteFrame.Office.Windows.WithLibreOffice`.
 
 Build a pinned LibreOffice source revision and our native worker for the target platform. Stage all required binaries, resources, configuration, fonts selected for redistribution, and required notices into one directory. Preserve the engine's directory layout. Resolve symlinks into regular files when staging; the validator rejects linked files/directories. Maintain an inventory of redistribution licenses for native dependencies.
 

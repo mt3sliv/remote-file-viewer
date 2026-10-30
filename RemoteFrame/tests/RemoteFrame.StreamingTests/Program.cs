@@ -28,6 +28,8 @@ static RemoteFrameOptions BoundSettings(string json, Action<RemoteFrameOptions>?
     using var provider = services.BuildServiceProvider();
     return provider.GetRequiredService<IOptions<RemoteFrameOptions>>().Value;
 }
+Check(!BoundSettings("{}").ShowSaveButton, "Save button is hidden by default");
+Check(BoundSettings("{\"RemoteFrame\":{\"ShowSaveButton\":true}}").ShowSaveButton, "Host configuration can enable the Save button");
 Check(BoundSettings("{}").DefaultFrameConfiguration == new FrameConfiguration(), "Missing appsettings section uses built-in frame defaults");
 Check(BoundSettings("{\"RemoteFrame\":{\"DefaultFrameConfiguration\":{\"FramesPerSecond\":14}}}").DefaultFrameConfiguration == new FrameConfiguration(FramesPerSecond:14), "Partial appsettings overrides only supplied defaults");
 var fromConfig = BoundSettings("{\"RemoteFrame\":{\"FitStreamToViewport\":true,\"DefaultFrameConfiguration\":{\"FramesPerSecond\":18,\"CaptureWidth\":960,\"CaptureHeight\":600,\"StreamWidth\":480,\"StreamHeight\":300}}}");

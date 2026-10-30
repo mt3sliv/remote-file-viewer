@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory)][string]$Version,
     [string]$OutputDirectory = "$PSScriptRoot/../artifacts/packages",
     [ValidateRange(1,180000000)][long]$PartBudgetBytes = 180000000,
-    [string]$RuntimeIdentifier = 'win-x64'
+    [string]$RuntimeIdentifier = 'win-x64',
+    [string]$PackageId,
+    [string]$DeploymentSubdirectory = '',
+    [string]$Readme = "$PSScriptRoot/RUNTIME-PACKAGE.md"
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -12,7 +15,9 @@ if ($RuntimeIdentifier -notmatch '^(win|linux)-(x64|arm64)$') { throw 'Unsupport
 $Payload = [IO.Path]::GetFullPath($Payload)
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 $root = Split-Path $PSScriptRoot -Parent
-$id = "RemoteFrame.Office.Runtime.$RuntimeIdentifier"
+$id = if ($PackageId) { $PackageId } else { "RemoteFrame.Office.Runtime.$RuntimeIdentifier" }
+if ($id -notmatch '^RemoteFrame\.[A-Za-z0-9.-]+$' -or $DeploymentSubdirectory -notin '', 'components/worker', 'components/libreoffice') { throw 'Invalid package identity or deployment subdirectory.' }
+$deployment = $RuntimeIdentifier + $(if ($DeploymentSubdirectory) { '/' + $DeploymentSubdirectory })
 if (Test-Path "$OutputDirectory/$id.$Version.nupkg") { throw 'Choose a fresh package version; package versions are immutable.' }
 & dotnet run --project "$root/tools/RemoteFrame.RuntimeCheck" -c Release -- $Payload $RuntimeIdentifier
 if ($LASTEXITCODE -ne 0) { throw 'Runtime validation failed before splitting.' }
@@ -54,7 +59,7 @@ foreach ($relative in $runtimeManifest.licenses | Sort-Object -Unique) {
 [IO.File]::WriteAllText("$work/package-license.txt",$license)
 if ((Get-Item "$work/package-license.txt").Length -ge 1000000) { throw 'NuGet license metadata must be below 1 MB.' }
 [IO.File]::WriteAllText("$work/_._",'')
-Copy-Item "$PSScriptRoot/RUNTIME-PACKAGE.md" "$work/README.md"
+Copy-Item $Readme "$work/README.md"
 $commonItems = '<None Include="_._" Pack="true" PackagePath="lib/net10.0/" /><None Include="README.md" Pack="true" PackagePath="/" />'
 $commonItems += $licenseItems -join "`n"
 $dependencies = [Collections.Generic.List[string]]::new()
@@ -64,7 +69,7 @@ for ($index = 0; $index -lt $parts.Count; $index++) {
     $items = foreach ($file in $parts[$index]) {
         $relative = [IO.Path]::GetRelativePath($Payload,$file.FullName).Replace('\','/')
         $directory = [IO.Path]::GetDirectoryName($relative).Replace('\','/')
-        '<None Include="{0}" Pack="true" PackagePath="tools/remote-frame/{1}/{2}/" />' -f (Xml $file.FullName),$RuntimeIdentifier,(Xml $directory)
+        '<None Include="{0}" Pack="true" PackagePath="tools/remote-frame/{1}/{2}/" />' -f (Xml $file.FullName),$deployment,(Xml $directory)
     }
     $items += '<None Include="{0}" Pack="true" PackagePath="buildTransitive/{1}.targets" />' -f (Xml "$PSScriptRoot/RemoteFrame.Office.Runtime.targets"),$partId
     $project = "$work/$partId.csproj"
@@ -73,7 +78,7 @@ for ($index = 0; $index -lt $parts.Count; $index++) {
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework><EnableDefaultItems>false</EnableDefaultItems>
     <NoDefaultExcludes>true</NoDefaultExcludes><IncludeBuildOutput>false</IncludeBuildOutput>
-    <PackageId>$partId</PackageId><Description>Complete Office runtime assets, part $($index + 1) of $($parts.Count). Install RemoteFrame.Office.Windows.</Description>
+    <PackageId>$partId</PackageId><Description>$id assets, part $($index + 1) of $($parts.Count).</Description>
     <PackageLicenseExpression></PackageLicenseExpression><PackageLicenseFile>package-license.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
@@ -93,7 +98,7 @@ $coordinator = "$work/$id.csproj"
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework><EnableDefaultItems>false</EnableDefaultItems>
     <IncludeBuildOutput>false</IncludeBuildOutput><PackageId>$id</PackageId>
-    <Description>Complete Office runtime, assembled from size-bounded dependency packages.</Description>
+    <Description>$id native component, assembled from size-bounded dependency packages.</Description>
     <PackageLicenseExpression></PackageLicenseExpression><PackageLicenseFile>package-license.txt</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

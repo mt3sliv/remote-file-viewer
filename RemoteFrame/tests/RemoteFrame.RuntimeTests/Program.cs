@@ -47,6 +47,34 @@ try
     File.Delete(Path.Combine(root, "unlisted.dll"));
     File.Delete(Path.Combine(root, "runtime.json"));
     Reject(() => BundledOfficeRuntime.Validate(root, "win-x64"), "Missing runtime");
+    foreach (var component in new[] { "worker", "libreoffice" })
+    {
+        var stage = Path.Combine(root, "components", component);
+        Directory.CreateDirectory(stage);
+        var binary = component == "worker" ? "worker.exe" : "soffice.exe";
+        File.WriteAllText(Path.Combine(stage, binary), "COMPONENT FIXTURE");
+        File.WriteAllText(Path.Combine(stage, "LICENSE.txt"), "LICENSE FIXTURE");
+        var inventory = Directory.GetFiles(stage).ToDictionary(path => Path.GetFileName(path)!,
+            path => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))));
+        File.WriteAllText(Path.Combine(stage, "runtime.json"), JsonSerializer.Serialize(new
+        {
+            schemaVersion = 2, component, runtimeIdentifier = "win-x64", version = "test", sourceRevision = "test",
+            engine = component == "libreoffice" ? binary : null,
+            worker = component == "worker" ? binary : null,
+            licenses = new[] { "LICENSE.txt" }, files = inventory
+        }));
+        if (component == "worker")
+        {
+            var onlyWorker = BundledOfficeRuntime.Validate(root, "win-x64");
+            if (onlyWorker.EnginePath != "" || !File.Exists(onlyWorker.WorkerPath)) throw new Exception("Worker-only deployment failed.");
+            Console.WriteLine("PASS: Worker resolves without LibreOffice.");
+        }
+    }
+    var combined = BundledOfficeRuntime.Validate(root, "win-x64");
+    if (!File.Exists(combined.EnginePath) || !File.Exists(combined.WorkerPath)) throw new Exception("Combined components failed.");
+    File.AppendAllText(combined.EnginePath, "corruption");
+    Reject(() => BundledOfficeRuntime.Validate(root, "win-x64", false), "Corrupted optional engine");
+    Console.WriteLine("PASS: Optional engine resolves and retains independent integrity validation.");
     Console.WriteLine("Runtime validation checks passed.");
 }
 finally { Directory.Delete(root, recursive: true); }

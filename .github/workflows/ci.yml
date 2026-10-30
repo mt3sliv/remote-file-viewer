@@ -38,6 +38,22 @@ jobs:
         run: ./packaging/Test-Managed.ps1 -Version $env:RELEASE_VERSION
       - name: Verify split dependency restore and publish
         run: ./tests/TestSplitRuntimePackaging.ps1
+  windows-worker:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - name: Native mouse and modal regressions
+        run: ./tests/TestPointerInput.ps1
+      - name: Build and verify worker without LibreOffice
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: ./packaging/Build-WorkerDistribution.ps1 -Version $env:RELEASE_VERSION
   windows-runtime:
     runs-on: windows-2025
     timeout-minutes: 90
@@ -59,8 +75,6 @@ jobs:
         with:
           path: RemoteFrame/artifacts/libreoffice-binary
           key: office-win-x64-${{ hashFiles('RemoteFrame/packaging/libreoffice/binary.lock.json') }}
-      - name: Native mouse and modal regressions
-        run: ./tests/TestPointerInput.ps1
       - name: Binary provenance regressions
         run: ./tests/TestBinaryBuild.ps1
       - name: Build and test full Windows distribution

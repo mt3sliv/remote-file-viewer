@@ -4,14 +4,14 @@
     <EnableDefaultItems>false</EnableDefaultItems>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <PackageId>RemoteFrame.Office.Windows</PackageId>
-    <Description>RemoteFrame ASP.NET Core integration with the bundled Windows x64 Office preview.</Description>
+    <Description>RemoteFrame ASP.NET Core integration and Windows x64 worker for installed Office applications. LibreOffice is optional.</Description>
     <PackageReadmeFile>OFFICE-WINDOWS-PACKAGE.md</PackageReadmeFile>
     <ManagedPackageVersion Condition="'$(ManagedPackageVersion)' == ''">$(Version)</ManagedPackageVersion>
     <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">$(Version)</OfficeRuntimePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="RemoteFrame.AspNetCore" Version="$(ManagedPackageVersion)" />
-    <PackageReference Include="RemoteFrame.Office.Runtime.win-x64" Version="$(OfficeRuntimePackageVersion)" />
+    <PackageReference Include="RemoteFrame.Office.Worker.Runtime.win-x64" Version="$(OfficeRuntimePackageVersion)" />
     <None Include="../OFFICE-WINDOWS-PACKAGE.md" Pack="true" PackagePath="/" />
     <None Include="_._" Pack="true" PackagePath="lib/net10.0/" />
   </ItemGroup>

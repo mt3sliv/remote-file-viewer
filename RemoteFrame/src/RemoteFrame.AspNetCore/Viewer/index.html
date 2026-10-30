@@ -12,7 +12,7 @@
   <section id="viewerControls" aria-label="File and session">
     <div class="selected-file">Selected file <output id="selectedFile">No file selected</output></div>
     <button id="open" type="button" disabled>Open file</button>
-    <button id="save" type="button" disabled>Save document</button>
+    <button id="save" type="button" hidden disabled>Save document</button>
     <button id="close" type="button">Close session</button>
   </section>
   <details id="frameSettings">
@@ -27,7 +27,10 @@
     <button id="applySettings" type="button">Apply settings</button>
     </section>
   </details>
-  <p id="status" role="status" aria-live="polite">Loading viewer settings…</p>
-  <canvas id="screen" width="960" height="600" tabindex="0" aria-label="Remote file image"></canvas>
+  <div id="viewer">
+    <button id="fullscreen" type="button" disabled aria-pressed="false">Enter fullscreen</button>
+    <p id="status" role="status" aria-live="polite">Loading viewer settings…</p>
+    <canvas id="screen" width="960" height="600" tabindex="-1" aria-disabled="true" aria-label="Remote file image"></canvas>
+  </div>
 </body>
 </html>

@@ -7,7 +7,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="../RemoteFrame.AspNetCore/RemoteFrame.AspNetCore.csproj" Condition="'$(UseRemoteFramePackages)' != 'true'" />
-		<PackageReference Include="RemoteFrame.Office.Windows" Version="$(RemoteFramePackageVersion)" Condition="'$(UseRemoteFramePackages)' == 'true'" />
+        <PackageReference Include="RemoteFrame.Office.Windows.WithLibreOffice" Version="$(RemoteFramePackageVersion)" Condition="'$(UseRemoteFramePackages)' == 'true'" />
 
 		<Content Include="../../samples/**/*" Link="samples/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 	</ItemGroup>

@@ -8,10 +8,15 @@ dotnet add package RemoteFrame.Office.Windows --prerelease
 ```
 
 It brings in `RemoteFrame.AspNetCore`, `RemoteFrame.Core`, `RemoteFrame.Rendering`
-and the complete Windows x64 runtime. Consumers do not need to build LibreOffice
-or separately install it. The runtime is split into dependency packages to stay
-within NuGet.org size limits; restore/build/publish assemble the original tree
-under `remote-frame/win-x64` automatically. Keep that tree in deployments.
+and the self-contained RemoteFrame worker and native input helper for Windows x64.
+Starting with preview.11, this package does not include LibreOffice. It uses a
+supported installed Excel, Word or LibreOffice application with matching x64
+architecture. Keep `remote-frame/win-x64/components/worker` in deployments.
+
+For bundled LibreOffice fallback, install
+[RemoteFrame.Office.Windows.WithLibreOffice](https://www.nuget.org/packages/RemoteFrame.Office.Windows.WithLibreOffice)
+instead. Preview.10 and earlier included LibreOffice in this package; upgrading
+those applications to the convenience package preserves the previous behavior.
 
 ## Integrate with your application
 
@@ -53,7 +58,9 @@ The worker prefers supported installed applications: the host account's supporte
 file association, compatible Windows App Paths applications, then bundled
 LibreOffice. Excel, Word and LibreOffice adapters are supported; arbitrary
 associated executables are not. Set `PreferInstalledOfficeApplications = false`
-to force bundled LibreOffice. Installed Excel/Word require their own installation
+to force bundled LibreOffice when its optional package is deployed. Without that
+bundle, disabling installed applications leaves no application candidates.
+Installed Excel/Word require their own installation
 and licensing and are not supplied by this package. The packaged worker/helper is
 required in either mode.
 
@@ -62,9 +69,9 @@ Save propagates changes to the configured server file, unless that file changed
 externally. Closing discards unsaved edits. Application save/format dialogs remain
 inside the viewer. Macro trust and Office security settings are not changed.
 
-The bundle uses a pinned official LibreOffice binary distribution, a self-contained
-RemoteFrame worker and native input helper, Visual C++ runtime dependencies and
-component notices. Full licenses are included. This is a Windows x64 preview;
+The worker includes its .NET runtime and component license notices. The separate
+LibreOffice package supplies its engine, Visual C++ dependencies and notices.
+This is a Windows x64 preview;
 Linux/ARM64 native runtimes are not published. Managed text rendering is portable,
 but installing this aggregate does not provide a Linux Office worker.
 

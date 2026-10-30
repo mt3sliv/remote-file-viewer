@@ -12,15 +12,15 @@ $expectedVersion = if ($ExpectedPackageVersion) { $ExpectedPackageVersion } else
     & "$root/packaging/Get-ReleaseVersion.ps1"
 }
 $assets = Get-Content -LiteralPath "$server/obj/project.assets.json" -Raw | ConvertFrom-Json -AsHashtable
-foreach ($package in 'RemoteFrame.Office.Windows', 'RemoteFrame.Office.Runtime.win-x64') {
+foreach ($package in 'RemoteFrame.Office.Windows', 'RemoteFrame.Office.Windows.WithLibreOffice', 'RemoteFrame.Office.Worker.Runtime.win-x64', 'RemoteFrame.LibreOffice.Runtime.win-x64') {
     if (-not $assets.libraries.ContainsKey("$package/$expectedVersion")) {
         throw "The demo did not restore $package/$expectedVersion. Restore/build it with default package references."
     }
 }
 if ($UsePackageWorker) {
     $packageWorkerDirectories = @(foreach ($folder in $assets.packageFolders.Keys) {
-        foreach ($library in $assets.libraries.Values | Where-Object { $_.path -like 'remoteframe.office.runtime.win-x64*/*' }) {
-            $candidate = Join-Path $folder "$($library.path)/tools/remote-frame/win-x64/worker"
+        foreach ($library in $assets.libraries.Values | Where-Object { $_.path -like 'remoteframe.office.worker.runtime.win-x64*/*' }) {
+            $candidate = Join-Path $folder "$($library.path)/tools/remote-frame/win-x64/components/worker/worker"
             if (Test-Path $candidate) { $candidate }
         }
     })
@@ -39,7 +39,7 @@ foreach ($package in 'RemoteFrame.AspNetCore','RemoteFrame.Core','RemoteFrame.Re
         throw "The demo has a stale managed library: $package"
     }
 }
-$runtime = Join-Path $ServerOutputDirectory 'remote-frame/win-x64'
+$runtime = Join-Path $ServerOutputDirectory 'remote-frame/win-x64/components/worker'
 $manifest = Get-Content -LiteralPath "$runtime/runtime.json" -Raw | ConvertFrom-Json -AsHashtable
 foreach ($name in 'RemoteFrame.Office.Worker.exe','RemoteFrame.Office.Worker.dll','RemoteFrame.Core.dll','RemoteFrame.Rendering.dll','RemoteFrame.InputHook.dll') {
     $expectedFile = if ($UsePackageWorker) {

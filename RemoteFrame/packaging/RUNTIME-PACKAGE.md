@@ -1,13 +1,22 @@
 # RemoteFrame Windows x64 Office runtime
 
-This package is part of the runtime dependency graph for
-[RemoteFrame.Office.Windows](https://www.nuget.org/packages/RemoteFrame.Office.Windows).
-Application developers should install that aggregate package.
+This package retains the original combined Office runtime dependency contract.
+Starting with preview.11 this is a compatibility coordinator for the independent
+`RemoteFrame.Office.Worker.Runtime.win-x64` and
+`RemoteFrame.LibreOffice.Runtime.win-x64` packages. New applications should install
+`RemoteFrame.Office.Windows` for installed applications only, or
+[RemoteFrame.Office.Windows.WithLibreOffice](https://www.nuget.org/packages/RemoteFrame.Office.Windows.WithLibreOffice)
+to include the bundled LibreOffice fallback.
 
-`RemoteFrame.Office.Runtime.win-x64` is a small coordinator that pins the complete
-set of `RemoteFrame.Office.Runtime.win-x64.PartNNN` packages to exact versions.
+When upgrading this coordinator to preview.11 or later, also upgrade
+`RemoteFrame.AspNetCore` to preview.11 or later so it can discover the new component
+layout. Existing schema-1 combined payloads remain supported by the newer library.
+
+Preview.10 and earlier used `RemoteFrame.Office.Runtime.win-x64.PartNNN` packages.
+The separate component coordinators now pin their own parts to exact versions.
 Each part contains a subset of the original files. Transitive MSBuild targets copy
-the complete runtime tree to `remote-frame/win-x64` during build and publish,
+the complete runtime trees to `remote-frame/win-x64/components/worker` and
+`remote-frame/win-x64/components/libreoffice` during build and publish,
 without an install script or application-startup download. Individual parts are
 not standalone engines.
 

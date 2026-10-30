@@ -24,6 +24,7 @@ let limits = null;
 async function loadSettings() {
   try {
     limits = await api('/api/frame-settings');
+    $('save').hidden = limits.showSaveButton !== true;
     $('fps').value = limits.defaults.framesPerSecond;
     $('fps').max = limits.maxFramesPerSecond;
     $('captureWidth').value = limits.defaults.captureWidth;
@@ -76,18 +77,46 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => { if ($('fitViewport').checked) updateConfiguration(); }, 250);
 });
+function sessionActions(enabled) {
+  for (const id of ['close', 'applySettings']) $(id).disabled = !enabled;
+  $('fullscreen').disabled = !document.fullscreenElement && (!enabled || !$('viewer').requestFullscreen);
+  canvas.tabIndex = enabled ? 0 : -1;
+  canvas.setAttribute('aria-disabled', String(!enabled));
+}
+sessionActions(false);
+$('fullscreen').onclick = async () => {
+  try {
+    if (document.fullscreenElement === $('viewer')) await document.exitFullscreen();
+    else await $('viewer').requestFullscreen();
+  } catch (e) { status(e.message); }
+};
+document.addEventListener('fullscreenchange', () => {
+  cancelPointer();
+  const full = document.fullscreenElement === $('viewer');
+  $('fullscreen').textContent = full ? 'Exit fullscreen' : 'Enter fullscreen';
+  $('fullscreen').setAttribute('aria-pressed', String(full));
+  sessionActions(socket?.readyState === WebSocket.OPEN);
+  if ($('fitViewport').checked) updateConfiguration();
+});
 async function closeSession() {
   generation++;
   $('save').disabled=true;
   cancelPointer();
   const ws = socket, id = sessionId;
   socket=null; sessionId=null;
+  sessionActions(false);
+  context.clearRect(0, 0, canvas.width, canvas.height);
   if (ws) ws.close();
   if (id) {
-    try { await api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE',keepalive:true}); } catch {}
+    await api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE',keepalive:true});
   }
 }
-$('close').onclick = async () => { await closeSession(); status('Session closed.'); };
+$('close').onclick = async () => {
+  $('open').disabled = true;
+  try { await closeSession(); status('Session closed'); }
+  catch (e) { status('Could not close the server session: ' + e.message); }
+  finally { $('open').disabled = leaving || !selectedFileId; }
+};
 $('open').onclick = openFile;
 async function openFile() {
   if (opening || leaving) return;
@@ -112,15 +141,16 @@ async function openFile() {
     const ws = new WebSocket(`${proto}//${location.host}${endpoint('/ws/'+encodeURIComponent(sessionId))}`);
     socket=ws;
     ws.binaryType='blob';
-    ws.onopen=()=>{ if(socket!==ws)return; $('save').disabled=!editable; status(editable ? 'Connected. Click the application to edit. Save updates the server file.' : 'Connected. Use the mouse wheel or navigation keys to scroll.');canvas.focus();};
+    ws.onopen=()=>{ if(socket!==ws)return; sessionActions(true); $('save').disabled=!editable || limits.showSaveButton !== true; status(editable && limits.showSaveButton === true ? 'Connected. Click the application to edit. Save updates the server file.' : 'Connected. Use the mouse wheel or navigation keys to scroll.');canvas.focus();};
     ws.onmessage = latestFrameReceiver(ws);
     ws.onerror=()=>{if(socket===ws)status('WebSocket error.');};
     ws.onclose=()=>{ if(socket===ws) {
       cancelPointer(); const id=sessionId; socket=null; sessionId=null;
+      sessionActions(false); context.clearRect(0, 0, canvas.width, canvas.height);
       if(id) api('/api/sessions/'+encodeURIComponent(id),{method:'DELETE',keepalive:true}).catch(()=>{});
       $('save').disabled=true; status('Viewer connection closed.');
     } };
-  } catch(e) { if (attempt === generation) { await closeSession(); status(e.message); } }
+  } catch(e) { if (attempt === generation) { await closeSession().catch(()=>{}); status(e.message); } }
   finally { opening=false; $('open').disabled=leaving || !selectedFileId; }
 }
 function latestFrameReceiver(ws) {
@@ -160,7 +190,13 @@ canvas.addEventListener('keydown', e=>{
 });
 function point(e) {
   const r=canvas.getBoundingClientRect();
-  return {x:Math.round((e.clientX-r.left)*canvas.width/r.width),y:Math.round((e.clientY-r.top)*canvas.height/r.height),button:e.button,
+  // Work in CSS pixels, then map the contained image to its native frame pixels.
+  // DPR changes stream resolution only; multiplying input coordinates by DPR would apply it twice.
+  const width = canvas.clientWidth || r.width, height = canvas.clientHeight || r.height;
+  const scale = Math.min(width / canvas.width, height / canvas.height);
+  const left = r.left + (canvas.clientLeft || 0) + (width - canvas.width * scale) / 2;
+  const top = r.top + (canvas.clientTop || 0) + (height - canvas.height * scale) / 2;
+  return {x:Math.max(0,Math.min(canvas.width-1,Math.round((e.clientX-left)/scale))),y:Math.max(0,Math.min(canvas.height-1,Math.round((e.clientY-top)/scale))),button:e.button,
     ctrl:!!e.ctrlKey,shift:!!e.shiftKey,alt:!!e.altKey,frameWidth:canvas.width,frameHeight:canvas.height};
 }
 let activePointer = null, heldButtons = 0;
@@ -182,6 +218,11 @@ function cancelPointer() {
   if (id !== null && canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
 }
 canvas.addEventListener('pointerdown',e=>{
+  if (socket?.readyState !== WebSocket.OPEN) return;
+  const r = canvas.getBoundingClientRect();
+  const scale = Math.min((canvas.clientWidth || r.width)/canvas.width, (canvas.clientHeight || r.height)/canvas.height);
+  const x = e.clientX-r.left-(canvas.clientLeft||0), y = e.clientY-r.top-(canvas.clientTop||0);
+  if (Math.abs(x-(canvas.clientWidth||r.width)/2)>canvas.width*scale/2 || Math.abs(y-(canvas.clientHeight||r.height)/2)>canvas.height*scale/2) return;
   if (activePointer !== null && activePointer !== e.pointerId) return;
   e.preventDefault(); canvas.focus(); activePointer = e.pointerId;
   try { canvas.setPointerCapture(e.pointerId); }
@@ -211,5 +252,5 @@ canvas.addEventListener('lostpointercapture',e=>{if(activePointer===e.pointerId)
 canvas.addEventListener('blur',cancelPointer);
 window.addEventListener('blur',cancelPointer);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
-$('save').onclick=()=>{sendInput({kind:'save'});status('Save shortcut sent. Check the application for any save or format prompts.');};
-window.addEventListener('pagehide',()=>{leaving=true;closeSession();});
+$('save').onclick=()=>{if($('save').hidden || $('save').disabled)return;sendInput({kind:'save'});status('Save shortcut sent. Check the application for any save or format prompts.');};
+window.addEventListener('pagehide',()=>{leaving=true;closeSession().catch(()=>{});});

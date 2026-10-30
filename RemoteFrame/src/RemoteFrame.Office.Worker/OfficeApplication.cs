@@ -21,7 +21,7 @@ internal sealed record OfficeApplication(string Executable, OfficeApplicationKin
                 failures.Add(ex);
             }
         }
-        throw new IOException("No Office application could open an isolated document session.", new AggregateException(failures));
+        throw new IOException("No supported Office application could open this document. Install compatible Excel/Word or add RemoteFrame.Office.Windows.WithLibreOffice for a bundled engine.", new AggregateException(failures));
     }
 
     public bool MatchesWindow(string name) => Kind switch
@@ -58,7 +58,7 @@ internal sealed record OfficeApplication(string Executable, OfficeApplicationKin
                     string.Equals(x.Executable, app.Executable, StringComparison.OrdinalIgnoreCase))) result.Add(app);
             }
         result.RemoveAll(x => string.Equals(x.Executable, bundled, StringComparison.OrdinalIgnoreCase));
-        result.Add(new(bundled, OfficeApplicationKind.LibreOffice));
+        if (!string.IsNullOrWhiteSpace(bundled)) result.Add(new(bundled, OfficeApplicationKind.LibreOffice));
         return result;
     }
 

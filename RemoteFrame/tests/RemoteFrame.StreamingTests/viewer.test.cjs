@@ -7,7 +7,7 @@ const on = scope => (name, fn) => handlers.set(`${scope}:${name}`,fn);
 const captures = new Set();
 const element = id => {
   if (!elements.has(id)) elements.set(id, {value:'',checked:true,width:1280,height:800,
-    getContext:()=>({}),getBoundingClientRect:()=>({width:640}),addEventListener:on(id),replaceChildren(){},parentElement:{},focus(){},
+    setAttribute(){},getContext:()=>({clearRect(){}}),getBoundingClientRect:()=>({width:640}),addEventListener:on(id),replaceChildren(){},parentElement:{},focus(){},
     setPointerCapture:id=>captures.add(id),hasPointerCapture:id=>captures.has(id),releasePointerCapture:id=>{
       captures.delete(id); handlers.get('screen:lostpointercapture')?.({pointerId:id});
     }});
@@ -87,3 +87,13 @@ async function decodingChecks() {
   console.log('PASS: One decode in flight, newest pending frame retained, stale-session bitmap closed');
 }
 decodingChecks().catch(error=>{console.error(error);process.exitCode=1;});
+
+// A square fullscreen content box contains a 1280 x 800 image with top/bottom bars.
+element('screen').getBoundingClientRect=()=>({left:10,top:20,width:1000,height:1000});
+let mapped=vm.runInContext('point({clientX:510,clientY:520})',sandbox);
+assert.equal(mapped.x,640);assert.equal(mapped.y,400);
+mapped=vm.runInContext('point({clientX:10,clientY:20})',sandbox);
+assert.equal(mapped.x,0);assert.equal(mapped.y,0);
+mapped=vm.runInContext('point({clientX:1010,clientY:1020})',sandbox);
+assert.equal(mapped.x,1279);assert.equal(mapped.y,799);
+console.log('PASS: Fullscreen letterboxing, offsets and bounded frame coordinates');

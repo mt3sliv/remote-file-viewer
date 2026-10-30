@@ -1,15 +1,16 @@
 param(
-    [Parameter(Mandatory=$true)][string]$Engine,
+    [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Engine,
     [Parameter(Mandatory=$true)][string]$Worker,
     [switch]$EditAndSave,
     [switch]$PreferInstalledApplications,
     [switch]$ConfirmFormatDialog,
     [string]$ExpectedApplication,
-    [string]$Sample = 'TestLibreOfficeWriterDocument.odt'
+    [string]$Sample = 'TestLibreOfficeWriterDocument.odt',
+    [string]$ProbeDirectory
 )
 $ErrorActionPreference = 'Stop'
 $remoteFrameRoot = Split-Path $PSScriptRoot -Parent
-$probeDir = Join-Path $remoteFrameRoot 'artifacts/office-probe'
+$probeDir = if ($ProbeDirectory) { [IO.Path]::GetFullPath($ProbeDirectory) } else { Join-Path $remoteFrameRoot 'artifacts/office-probe' }
 New-Item -ItemType Directory -Force $probeDir | Out-Null
 $extension = [IO.Path]::GetExtension($Sample)
 $probeFile = Join-Path $probeDir "probe$extension"

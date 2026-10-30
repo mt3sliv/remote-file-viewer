@@ -14,7 +14,7 @@ $test = Join-Path $root ('artifacts/release-policy/' + [Guid]::NewGuid().ToStrin
 New-Item -ItemType Directory -Force $test | Out-Null
 $version = '0.0.0-policy'
 # Only text fixtures and ValidateOnly: this test never authenticates or publishes.
-$entries = @(foreach ($id in 'RemoteFrame.Core','RemoteFrame.Rendering','RemoteFrame.AspNetCore','RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Windows','RemoteFrame.Office.Runtime.win-x64.Part001') {
+$entries = @(foreach ($id in 'RemoteFrame.Core','RemoteFrame.Rendering','RemoteFrame.AspNetCore','RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Windows','RemoteFrame.Office.Worker.Runtime.win-x64','RemoteFrame.LibreOffice.Runtime.win-x64','RemoteFrame.Office.Windows.WithLibreOffice','RemoteFrame.LibreOffice.Runtime.win-x64.Part001','RemoteFrame.Office.Worker.Runtime.win-x64.Part001') {
     $file = "$id.$version.nupkg"
     Set-Content "$test/$file" 'TEXT FIXTURE ONLY'
     @{id=$id;file=$file;bytes=(Get-Item "$test/$file").Length;sha256=(Get-FileHash "$test/$file").Hash}
@@ -51,3 +51,32 @@ catch {
 }
 if (-not $rejected) { throw 'Oversized NuGet license metadata was accepted.' }
 Write-Output 'PASS: NuGet license metadata above 1 MB is rejected before publication.'
+
+foreach ($group in 'Managed','Worker','LibreOffice','Integration') {
+    $policy = & "$root/packaging/Get-ReleasePackagePolicy.ps1" -Group $group
+    $selected = @($entries | Where-Object { $_.id -in $policy.Required })
+    # Include the fixture part for each required component coordinator.
+    foreach ($prefix in $policy.PartPrefixes) { $selected += @($entries | Where-Object id -Like "$prefix.Part*") }
+    $staged = @{version=$version;group=$group;commit=(& git rev-parse HEAD);packages=$selected}
+    if ($group -eq 'Worker') {
+        $windows = $selected | Where-Object id -EQ 'RemoteFrame.Office.Windows'
+        $windows.dependencies = @('RemoteFrame.AspNetCore','RemoteFrame.Office.Worker.Runtime.win-x64')
+        $windows.dependencyVersions = @{'RemoteFrame.AspNetCore'=$version;'RemoteFrame.Office.Worker.Runtime.win-x64'=$version}
+    }
+    $staged | ConvertTo-Json -Depth 6 | Set-Content "$test/release-$group.json"
+    & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -Group $group -ValidateOnly
+    $staged.group = 'WrongGroup'
+    $staged | ConvertTo-Json -Depth 6 | Set-Content "$test/release-$group.json"
+    Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -Group $group -ValidateOnly } 'Mismatched publish group'
+    if ($group -eq 'Worker') {
+        $staged.group = $group
+        $windows.dependencyVersions['RemoteFrame.AspNetCore'] = '99.0.0'
+        $staged | ConvertTo-Json -Depth 6 | Set-Content "$test/release-$group.json"
+        Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -Group $group -ValidateOnly } 'Mismatched external dependency version'
+        $windows.dependencyVersions['RemoteFrame.AspNetCore'] = $version
+        $staged.packages += $entries[0]
+        $staged | ConvertTo-Json -Depth 6 | Set-Content "$test/release-$group.json"
+        Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -Group $group -ValidateOnly } 'Package outside publish group'
+    }
+}
+Write-Output 'PASS: Independent publish groups enforce package boundaries, external dependency versions and artifact provenance.'

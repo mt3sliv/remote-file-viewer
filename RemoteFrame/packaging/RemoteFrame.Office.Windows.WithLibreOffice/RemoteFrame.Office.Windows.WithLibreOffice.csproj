@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <PackageId>RemoteFrame.Office.Windows.WithLibreOffice</PackageId>
+    <Description>RemoteFrame Windows Office integration with the optional bundled LibreOffice engine.</Description>
+    <PackageReadmeFile>WITH-LIBREOFFICE-PACKAGE.md</PackageReadmeFile>
+    <ManagedPackageVersion Condition="'$(ManagedPackageVersion)' == ''">$(Version)</ManagedPackageVersion>
+    <OfficeRuntimePackageVersion Condition="'$(OfficeRuntimePackageVersion)' == ''">$(Version)</OfficeRuntimePackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="RemoteFrame.Office.Windows" Version="$(OfficeRuntimePackageVersion)" />
+    <PackageReference Include="RemoteFrame.LibreOffice.Runtime.win-x64" Version="$(OfficeRuntimePackageVersion)" />
+    <None Include="../WITH-LIBREOFFICE-PACKAGE.md" Pack="true" PackagePath="/" />
+    <None Include="../RemoteFrame.Office.Windows/_._" Pack="true" PackagePath="lib/net10.0/" />
+  </ItemGroup>
+  <Target Name="ExcludeDependencyContentFromPackage" BeforeTargets="_GetPackageFiles">
+    <ItemGroup><Content Update="@(Content)" Pack="false" /></ItemGroup>
+  </Target>
+</Project>

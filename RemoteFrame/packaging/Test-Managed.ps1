@@ -5,7 +5,7 @@ $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
     function Run-DotNet { & dotnet @args; if ($LASTEXITCODE -ne 0) { throw "dotnet $($args[0]) failed." } }
-    Run-DotNet build src/RemoteFrame.Server -c Release '-p:UseRemoteFramePackages=false' "-p:Version=$Version"
+    Run-DotNet build src/RemoteFrame.Server -c Release '-p:UseRemoteFramePackages=false' "-p:Version=$Version" -o artifacts/managed-test-server
     Run-DotNet build src/RemoteFrame.Office.Worker -c Release "-p:Version=$Version"
     foreach ($test in 'RemoteFrame.ApplicationTests','RemoteFrame.RuntimeTests','RemoteFrame.StreamingTests') {
         Run-DotNet run --project "tests/$test" -c Release "-p:Version=$Version"

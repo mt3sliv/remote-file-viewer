@@ -38,6 +38,18 @@ Assert(Select(".XLSX", unknown, [word, excel]).Select(x => x.Executable).Sequenc
 Assert(Select(".xlsx", excel, [excel], false).Single().Executable == bundled, "Bundled-only override failed.");
 Assert(Select(".pptx", word, [excel, word]).Single().Executable == bundled, "Unsupported native presentation adapters must fall back.");
 Assert(Select(".xlsm", excel, []).First().Kind == OfficeApplicationKind.Excel, "Macro-enabled workbook extension not recognized.");
+Assert(OfficeApplication.Select(".xlsx", "", excel, [], _ => true, true).Single().Kind == OfficeApplicationKind.Excel,
+    "Installed Excel must work without bundled LibreOffice.");
+Assert(OfficeApplication.Select(".xlsx", "", null, [], _ => true, true).Count == 0,
+    "Absent optional engine must not produce an invalid fallback candidate.");
+Assert(OfficeApplication.Select(".xlsx", "", excel, [], _ => true, false).Count == 0,
+    "Bundled-only mode must not silently use installed Office when the engine is absent.");
+try
+{
+    OfficeApplication.OpenFirst<string>([], _ => throw new Exception("No candidate should be launched."));
+    throw new Exception("Missing applications must fail.");
+}
+catch (IOException ex) { Assert(ex.Message.Contains("WithLibreOffice"), "Missing-application error must explain the optional engine package."); }
 Assert(OfficeApplication.Select(".xlsx", bundled, excel, [], _ => false, true).Single().Executable == bundled,
     "Uninstalled associations must fall back.");
 Assert(OfficeApplication.Recognize("excel.exe", ".xlsx") is null, "Relative executable paths must be rejected.");

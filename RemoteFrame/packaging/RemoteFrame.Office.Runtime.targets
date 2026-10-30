@@ -1,5 +1,5 @@
 <Project>
-  <!-- Copy the complete tree; LibreOffice cannot run from a flattened DLL list. -->
+  <!-- Preserve each complete native component tree, including engine and worker resources. -->
   <ItemGroup>
     <Content Include="$(MSBuildThisFileDirectory)../tools/remote-frame/**/*">
       <Link>remote-frame/%(RecursiveDir)%(Filename)%(Extension)</Link>

@@ -3,14 +3,15 @@
 GitHub build checks and tag-triggered NuGet publishing are described in
 [Publishing.md](docs/Publishing.md). Package versions now default from
 `Directory.Build.props`. The Windows runtime is distributed through size-bounded
-dependency packages; installing `RemoteFrame.Office.Windows` still brings in the
-complete runtime automatically.
+dependency packages. Starting with preview.11, `RemoteFrame.Office.Windows`
+includes the worker for installed applications; `RemoteFrame.Office.Windows.WithLibreOffice`
+also includes the optional bundled LibreOffice engine.
 
 RemoteFrame is an ASP.NET Core middleware/endpoint library for server-side text rendering and Windows x64 Office desktop sessions. The browser receives PNG frames and sends input over WebSockets; documents remain on the server.
 
 ## Run the local demo
 
-The demo consumes the aggregate `RemoteFrame.Office.Windows` NuGet package, which includes the middleware and a transitive native runtime. The configured development version is `0.3.0-preview.10`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
+The demo consumes `RemoteFrame.Office.Windows.WithLibreOffice`, which includes the middleware, worker and bundled engine. The configured development version is `0.3.0-preview.11`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
 
 ```powershell
 dotnet run --project RemoteFrame/src/RemoteFrame.Server
@@ -22,7 +23,7 @@ All files in `samples` are copied into the demo's build/publish output and regis
 
 ## Use in your web app
 
-Install `RemoteFrame.Office.Windows` from NuGet.org. It brings in the ASP.NET Core library and native runtime transitively. Published versions are listed on [NuGet.org](https://www.nuget.org/packages/RemoteFrame.Office.Windows). The development version in `Directory.Build.props` may be newer than the latest published release.
+Install `RemoteFrame.Office.Windows` for supported installed Excel, Word or LibreOffice applications. Install `RemoteFrame.Office.Windows.WithLibreOffice` to include the optional LibreOffice fallback. Preview.10 and earlier included LibreOffice with `RemoteFrame.Office.Windows`; switch to the convenience package to preserve that behavior. Published versions are listed on [NuGet.org](https://www.nuget.org/packages/RemoteFrame.Office.Windows). The development version in `Directory.Build.props` may be newer than the latest published release.
 
 ```csharp
 using RemoteFrame.AspNetCore;
@@ -41,11 +42,11 @@ app.MapRemoteFrame("/remote-frame");
 app.Run();
 ```
 
-Production applications should keep the library's default authorization requirement and configure their own authentication. See [the package guide](src/RemoteFrame.AspNetCore/PACKAGE.md). Use `-p:UseRemoteFramePackages=false` only for managed source development and tests. Office requires the aggregate package with the updated worker. Consumers do not need a system LibreOffice installation.
+Production applications should keep the library's default authorization requirement and configure their own authentication. See [the package guide](src/RemoteFrame.AspNetCore/PACKAGE.md). Use `-p:UseRemoteFramePackages=false` only for managed source development and tests. Office sessions always require the worker package. Consumers using the optional bundled engine do not need a system LibreOffice installation.
 
 Starting with preview.10, `MapRemoteFrame("/remote-frame")` also serves the embedded viewer. Link to `/remote-frame/viewer?fileId=document` with `target="_blank" rel="noopener"`; the page loads FPS settings, POSTs a session and opens the WebSocket. The Server demo lists file links that open this same packaged page. Settings are collapsed by default; the viewer has no file-selection dropdown. No `wwwroot` assets need copying. The package binds defaults from the host configuration's `RemoteFrame` section, falling back to built-in values for missing settings. Use `AuthorizeFileAsync` and/or `ResolveFileAsync` for host-managed private catalogs, as explained in the package guide.
 
-The demo loads its worker from `bin/<configuration>/net10.0/remote-frame/win-x64/worker`, copied from the runtime NuGet; it does not use a separately published worker under `artifacts`. Release `0.3.0-preview.3` includes the modal-form pointer routing and title-bar close fixes. After rebuilding the distribution and building the demo with default package references, run `pwsh -File tests/TestDemoRuntime.ps1` to verify the selected package version and compare the deployed worker/helper hashes with the fresh build. Restart the server and reopen sessions after updating packages; existing sessions keep their original worker process. `pwsh -File tests/TestPointerInput.ps1` rebuilds the native helper and checks real Windows modal buttons and X on a disposable private desktop without executing Excel macros.
+The demo loads its worker from `bin/<configuration>/net10.0/remote-frame/win-x64/components/worker/worker`, copied from the runtime NuGet; it does not use a separately published worker under `artifacts`. Release `0.3.0-preview.3` includes the modal-form pointer routing and title-bar close fixes. After rebuilding the distribution and building the demo with default package references, run `pwsh -File tests/TestDemoRuntime.ps1` to verify the selected package version and compare the deployed worker/helper hashes with the fresh build. Restart the server and reopen sessions after updating packages; existing sessions keep their original worker process. `pwsh -File tests/TestPointerInput.ps1` rebuilds the native helper and checks real Windows modal buttons and X on a disposable private desktop without executing Excel macros.
 
 Release `0.3.0-preview.4` also pairs mouse releases with the original pressed control and follows the application's redirected mouse capture. Cancelling a gesture cancels tracking on those controls rather than clicking at the top-left corner of whichever window is now visible. The browser handles pointer cancellation, lost capture, window blur, hidden pages and mouse-button chords, and reconciles a missed release from subsequent pointer state. Reload the viewer after upgrading to load these browser changes. The Windows pointer test includes capture transferred from a child control to its parent and release over another button; it is not a validation of every MSForms/VBA control.
 

@@ -8,6 +8,10 @@ permissions:
 concurrency:
   group: nuget-${{ github.ref }}
   cancel-in-progress: false
+defaults:
+  run:
+    shell: pwsh
+    working-directory: RemoteFrame
 jobs:
   version:
     runs-on: ubuntu-24.04
@@ -19,21 +23,205 @@ jobs:
           persist-credentials: false
       - name: Require a version tag
         id: version
-        shell: pwsh
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           if ($env:REF_TYPE -ne 'tag' -or -not $env:REF_NAME.StartsWith('v')) { throw 'Select a v<version> tag to publish.' }
-          $version = ./RemoteFrame/packaging/Get-ReleaseVersion.ps1 $env:REF_NAME.Substring(1)
+          $version = ./packaging/Get-ReleaseVersion.ps1 $env:REF_NAME.Substring(1)
           "version=$version" >> $env:GITHUB_OUTPUT
-  build:
+
+  build-managed:
     needs: version
-    uses: ./.github/workflows/ci.yml
-    with:
-      version: ${{ needs.version.outputs.version }}
-  publish:
-    needs: [version, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - name: Build and test managed libraries
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Test-Managed.ps1 -Version $env:RELEASE_VERSION
+      - name: Record managed artifacts
+        if: runner.os == 'Windows'
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/New-ReleaseManifest.ps1 -Version $env:RELEASE_VERSION -Group Managed
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: nuget-managed
+          path: |
+            RemoteFrame/artifacts/packages/RemoteFrame.Core.*.nupkg
+            RemoteFrame/artifacts/packages/RemoteFrame.Rendering.*.nupkg
+            RemoteFrame/artifacts/packages/RemoteFrame.AspNetCore.*.nupkg
+            RemoteFrame/artifacts/packages/release-Managed.json
+          if-no-files-found: error
+          retention-days: 14
+
+  build-worker:
+    needs: version
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - name: Native mouse and modal regressions
+        run: ./tests/TestPointerInput.ps1
+      - name: Verify separate component restore and publish
+        run: ./tests/TestSplitRuntimePackaging.ps1
+      - name: Build and verify standalone worker distribution
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Build-WorkerDistribution.ps1 -Version $env:RELEASE_VERSION
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget-worker
+          path: |
+            RemoteFrame/artifacts/packages/RemoteFrame.Office.Worker.Runtime.win-x64*.nupkg
+            RemoteFrame/artifacts/packages/RemoteFrame.Office.Windows.*.nupkg
+            RemoteFrame/artifacts/packages/release-Worker.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  build-libreoffice:
+    needs: version
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - uses: actions/cache@v6
+        with:
+          path: RemoteFrame/artifacts/libreoffice-binary
+          key: office-win-x64-${{ hashFiles('RemoteFrame/packaging/libreoffice/binary.lock.json') }}
+      - name: Binary provenance regressions
+        run: ./tests/TestBinaryBuild.ps1
+      - name: Build and test complete distribution
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Build-Distribution.ps1 -OfficeEngine Binary -PackageVersion $env:RELEASE_VERSION -ManagedPackageVersion $env:RELEASE_VERSION
+      - name: Verify packaged demo and complete deployed inventory
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          dotnet build src/RemoteFrame.Server -c Release "-p:Version=$env:RELEASE_VERSION" "-p:RemoteFramePackageVersion=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged demo build failed.' }
+          ./tests/TestDemoRuntime.ps1 -Configuration Release -ExpectedPackageVersion $env:RELEASE_VERSION
+          dotnet run --project tools/RemoteFrame.RuntimeCheck -c Release -- src/RemoteFrame.Server/bin/Release/net10.0/remote-frame/win-x64 win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Reassembled runtime validation failed.' }
+      - name: Record separate engine and integration artifacts
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          ./packaging/New-ReleaseManifest.ps1 -Version $env:RELEASE_VERSION -Group LibreOffice
+          ./packaging/New-ReleaseManifest.ps1 -Version $env:RELEASE_VERSION -Group Integration
+          ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group LibreOffice -ValidateOnly
+          ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Integration -ValidateOnly
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget-libreoffice
+          path: |
+            RemoteFrame/artifacts/packages/RemoteFrame.LibreOffice.Runtime.win-x64*.nupkg
+            RemoteFrame/artifacts/packages/release-LibreOffice.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget-integration
+          path: |
+            RemoteFrame/artifacts/packages/RemoteFrame.Office.Runtime.win-x64.*.nupkg
+            RemoteFrame/artifacts/packages/RemoteFrame.Office.Windows.WithLibreOffice.*.nupkg
+            RemoteFrame/artifacts/packages/release-Integration.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-managed:
+    needs: [version, build-managed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-managed
+          path: RemoteFrame/artifacts/packages
+      - name: Verify managed artifacts
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Managed -ValidateOnly
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish Core, Rendering and ASP.NET Core
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Managed
+
+  publish-worker:
+    needs: [version, build-worker, publish-managed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-worker
+          path: RemoteFrame/artifacts/packages
+      - name: Verify worker artifacts
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Worker -ValidateOnly
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish worker dependencies and Windows integration
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Worker
+
+  publish-libreoffice:
+    needs: [version, build-libreoffice]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: nuget
@@ -49,20 +237,51 @@ jobs:
           global-json-file: RemoteFrame/global.json
       - uses: actions/download-artifact@v8
         with:
-          name: nuget-release
+          name: nuget-libreoffice
           path: RemoteFrame/artifacts/packages
-      - name: Verify release artifacts
-        shell: pwsh
+      - name: Verify LibreOffice artifacts
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
-        run: ./RemoteFrame/packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -ValidateOnly
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group LibreOffice -ValidateOnly
       - uses: NuGet/login@v1
         id: login
         with:
           user: ${{ vars.NUGET_USER }}
-      - name: Publish dependencies then aggregate
-        shell: pwsh
+      - name: Publish LibreOffice parts then coordinator
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-        run: ./RemoteFrame/packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group LibreOffice
+
+  publish-integration:
+    needs: [version, build-libreoffice, publish-worker, publish-libreoffice]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: RemoteFrame/global.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuget-integration
+          path: RemoteFrame/artifacts/packages
+      - name: Verify integration artifacts
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Integration -ValidateOnly
+      - uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: Publish compatibility and LibreOffice convenience packages
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: ./packaging/Publish-NuGet.ps1 -Version $env:RELEASE_VERSION -Group Integration

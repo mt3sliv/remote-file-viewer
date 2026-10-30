@@ -19,6 +19,13 @@ foreach ($file in Get-ChildItem $Directory -Filter "*.$Version.nupkg") {
         if ($id -eq 'RemoteFrame.Core' -and -not $text.StartsWith('# RemoteFrame.Core')) { throw 'Core has the wrong package guide.' }
         if ($id -eq 'RemoteFrame.Rendering' -and -not $text.StartsWith('# RemoteFrame.Rendering')) { throw 'Rendering has the wrong package guide.' }
         if ($id -eq 'RemoteFrame.Office.Windows' -and -not $text.StartsWith('# RemoteFrame.Office.Windows')) { throw 'Aggregate has the wrong package guide.' }
+        $dependencies = @($spec.SelectNodes("//*[local-name()='dependency']") | ForEach-Object { [string]$_.id })
+        if ($id -eq 'RemoteFrame.Office.Windows' -and
+            ('RemoteFrame.Office.Worker.Runtime.win-x64' -notin $dependencies -or
+             'RemoteFrame.Office.Runtime.win-x64' -in $dependencies -or
+             'RemoteFrame.LibreOffice.Runtime.win-x64' -in $dependencies)) { throw 'Installed-Office integration must depend on the worker without LibreOffice.' }
+        if ($id -eq 'RemoteFrame.Office.Windows.WithLibreOffice' -and
+            ('RemoteFrame.Office.Windows' -notin $dependencies -or 'RemoteFrame.LibreOffice.Runtime.win-x64' -notin $dependencies)) { throw 'Full integration must include both the worker integration and optional engine.' }
         $count++
     } finally { $zip.Dispose() }
 }

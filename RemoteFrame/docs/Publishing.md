@@ -7,7 +7,8 @@ All commands run inside the `RemoteFrame` solution directory.
 
 Pushes and pull requests to `dev` and `main` run managed builds/tests on Ubuntu
 and Windows, browser input tests, and clean split-package restore/build/publish
-tests. The Windows job also builds the native helper, tests pointer/modal input,
+tests. An independent Windows worker job builds the native helper, tests pointer/modal
+input and verifies the worker-only distribution. The full Windows runtime job
 downloads the pinned official LibreOffice MSI, verifies its hashes, and builds
 and tests the complete distribution. Installed Excel is not present on hosted
 runners; its separate integration test still requires an Excel-equipped machine.
@@ -17,9 +18,12 @@ does not compile LibreOffice from source. Its archive/extraction cache is keyed
 by `binary.lock.json` and revalidated on every use. Source builds remain available
 through the existing source-receipt workflow, outside these release actions.
 
-The `nuget-release` artifact contains the exact packages tested, plus
-`release.json` recording their version, source commit, size and SHA-256. Upload
-retention is 14 days. Publishing downloads that artifact instead of rebuilding.
+CI retains the complete `nuget-release` artifact for inspection. The release workflow
+builds independent groups and uploads `nuget-managed`, `nuget-worker`,
+`nuget-libreoffice` and `nuget-integration`. Each has a `release-<Group>.json`
+manifest recording package versions, source commit, sizes, SHA-256 hashes and
+dependency versions. Retention is 14 days. Publish jobs use these tested artifacts
+rather than rebuilding them.
 
 ## One-time account setup
 
@@ -39,7 +43,8 @@ retention is 14 days. Publishing downloads that artifact instead of rebuilding.
 
 No long-lived API key is required. `NuGet/login@v1` exchanges the job's GitHub
 OIDC identity for a temporary key immediately before publishing. Only that job
-receives `id-token: write`; pull requests never publish.
+receives `id-token: write`; pull requests never publish. Each publish job obtains
+its own temporary key through the same workflow/environment policy.
 
 See [NuGet Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing).
 
@@ -53,19 +58,33 @@ an already published package version.
 For example, after committing the intended release:
 
 ```powershell
-git tag v0.3.0-preview.9
-git push origin v0.3.0-preview.9
+git tag v0.3.0-preview.11
+git push origin v0.3.0-preview.11
 ```
 
-This runs the complete CI workflow, then publishes its verified artifacts to
-NuGet.org. Stable tags such as `v0.3.0` are also supported. Manual dispatch is
+This starts managed, worker and LibreOffice builds in parallel. Publishing proceeds
+as soon as each group's checks and dependencies finish:
+
+| Publish job | Packages | Waits for |
+| --- | --- | --- |
+| Managed | Core, Rendering, ASP.NET Core | Managed tests on Windows and Linux |
+| Worker | Worker runtime/parts, Office.Windows | Worker-only tests and managed publication |
+| LibreOffice | LibreOffice runtime/parts | Engine build, native smoke checks and deployed inventory verification |
+| Integration | Compatibility runtime and Office.Windows.WithLibreOffice | Worker and LibreOffice publication |
+
+Managed and worker packages do not wait for LibreOffice. Each manifest permits only
+its group's package IDs and explicitly listed external dependencies at the same
+release version. Dependencies within a group are pushed before their dependents.
+Stable tags such as `v0.3.0` are also supported. Manual dispatch is
 allowed only when selecting a `v<version>` tag, so an ordinary branch dispatch
-cannot publish. A failure stops publishing; rerun the failed publish job to reuse
-the same artifacts, with already uploaded versions skipped.
+cannot publish. A later group failure leaves earlier groups published. Rerun the
+failed publish job to reuse the same verified artifacts, with already uploaded
+versions skipped. Dependent convenience packages stay blocked until their required
+groups succeed.
 
 Dependencies are uploaded before their coordinators. NuGet.org may take time
 to index new packages after upload; the action does not claim immediate search
-visibility. Package publication has not been exercised against NuGet.org locally.
+visibility. Local validation uses `-ValidateOnly` and never obtains a publishing key.
 
 ## Runtime size and installation
 
@@ -74,12 +93,15 @@ file groups capped at 180,000,000 uncompressed payload bytes, with an additional
 240,000,000-byte check on every finished release package. An individually oversized
 file fails the build rather than silently removing runtime content.
 
-`RemoteFrame.Office.Runtime.win-x64.Part001`, `Part002`, etc. carry the original
-files and transitive copy targets. The small `RemoteFrame.Office.Runtime.win-x64`
-coordinator pins all parts to exact versions. `RemoteFrame.Office.Windows` keeps
-its existing package ID and installation API. Restore pulls all parts; build and
-publish assemble them into the same `remote-frame/win-x64` tree. The unchanged
-runtime manifest verifies the complete reassembled inventory. Original component
+Starting with preview.11, `Pack-OfficeComponents.ps1` separates the worker from
+LibreOffice. `RemoteFrame.Office.Worker.Runtime.win-x64` and
+`RemoteFrame.LibreOffice.Runtime.win-x64` pin their own size-bounded parts.
+`RemoteFrame.Office.Windows` includes only the worker/integration;
+`RemoteFrame.Office.Windows.WithLibreOffice` adds the engine. The old
+`RemoteFrame.Office.Runtime.win-x64` ID remains a coordinator for both components.
+Build and publish assemble independent trees under `remote-frame/win-x64/components`.
+Schema-2 manifests validate each component independently; legacy schema-1 combined
+payloads remain supported. Original component
 licenses and notices remain present. Each part includes a short license summary
 for NuGet's metadata plus all full license texts under `licenses/`. The metadata
 file is checked against NuGet.org's separate 1 MB license-file limit; full notices

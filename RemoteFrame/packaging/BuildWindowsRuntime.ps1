@@ -40,10 +40,12 @@ if ($StagedPayload) {
 }
 $packages = Join-Path $remoteFrameRoot 'artifacts/packages'
 $workerOutput = Join-Path $remoteFrameRoot 'artifacts/windows-worker'
-if (@(Get-ChildItem -LiteralPath $packages -Filter "RemoteFrame.Office.Runtime.win-x64*.$PackageVersion.nupkg" -ErrorAction SilentlyContinue).Count -gt 0) {
-    throw 'Runtime packages or parts already exist for this version. Choose a new version.'
+foreach ($id in 'RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Worker.Runtime.win-x64','RemoteFrame.LibreOffice.Runtime.win-x64') {
+    if (@(Get-ChildItem -LiteralPath $packages -Filter "$id*.$PackageVersion.nupkg" -ErrorAction SilentlyContinue).Count -gt 0) {
+        throw "Runtime packages or parts already exist: $id/$PackageVersion. Choose a new version."
+    }
 }
-foreach ($name in @('RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Windows')) {
+foreach ($name in @('RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Windows','RemoteFrame.Office.Windows.WithLibreOffice')) {
     if (Test-Path -LiteralPath (Join-Path $packages "$name.$PackageVersion.nupkg")) {
         throw "Package $name.$PackageVersion already exists. Choose a new package version rather than overwriting cached binaries."
     }
@@ -128,8 +130,10 @@ Write-Host 'Packing managed libraries, bundled native runtime and aggregate NuGe
 foreach ($project in @('RemoteFrame.Core', 'RemoteFrame.Rendering', 'RemoteFrame.AspNetCore')) {
     Invoke-DotNet pack (Join-Path $remoteFrameRoot "src/$project/$project.csproj") -c Release -o $packages "-p:Version=$ManagedPackageVersion"
 }
-& "$PSScriptRoot/Pack-SplitRuntime.ps1" -Payload $payload -Version $PackageVersion -OutputDirectory $packages
-$aggregate = Join-Path $PSScriptRoot 'RemoteFrame.Office.Windows/RemoteFrame.Office.Windows.csproj'
-Invoke-DotNet restore $aggregate "-p:OfficeRuntimePackageVersion=$PackageVersion" "-p:ManagedPackageVersion=$ManagedPackageVersion" "-p:Version=$PackageVersion"
-Invoke-DotNet pack $aggregate -c Release --no-build -o $packages "-p:OfficeRuntimePackageVersion=$PackageVersion" "-p:ManagedPackageVersion=$ManagedPackageVersion" "-p:Version=$PackageVersion"
+& "$PSScriptRoot/Pack-OfficeComponents.ps1" -Payload $payload -Version $PackageVersion -OutputDirectory $packages
+foreach ($name in 'RemoteFrame.Office.Windows','RemoteFrame.Office.Windows.WithLibreOffice') {
+    $aggregate = Join-Path $PSScriptRoot "$name/$name.csproj"
+    Invoke-DotNet restore $aggregate "-p:OfficeRuntimePackageVersion=$PackageVersion" "-p:ManagedPackageVersion=$ManagedPackageVersion" "-p:Version=$PackageVersion"
+    Invoke-DotNet pack $aggregate -c Release --no-build -o $packages "-p:OfficeRuntimePackageVersion=$PackageVersion" "-p:ManagedPackageVersion=$ManagedPackageVersion" "-p:Version=$PackageVersion"
+}
 Write-Output "Local Windows Office preview packages are ready in $packages"

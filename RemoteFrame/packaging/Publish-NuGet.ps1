@@ -1,21 +1,28 @@
-param([Parameter(Mandatory)][string]$Version,[string]$Directory = "$PSScriptRoot/../artifacts/packages",[switch]$ValidateOnly)
+param([Parameter(Mandatory)][string]$Version,[string]$Directory = "$PSScriptRoot/../artifacts/packages",[switch]$ValidateOnly,
+    [ValidateSet('All','Managed','Worker','LibreOffice','Integration')][string]$Group = 'All')
 $ErrorActionPreference = 'Stop'
 $Version = & "$PSScriptRoot/Get-ReleaseVersion.ps1" $Version
-$manifest = Get-Content "$Directory/release.json" -Raw | ConvertFrom-Json
+$name = if ($Group -eq 'All') { 'release.json' } else { "release-$Group.json" }
+$manifest = Get-Content "$Directory/$name" -Raw | ConvertFrom-Json
+if ($Group -ne 'All' -and $manifest.group -ne $Group) { throw 'Artifact group does not match this publish job.' }
 if ($manifest.version -ne $Version) { throw 'Artifact version does not match the release tag.' }
 if ($env:GITHUB_SHA -and $manifest.commit -ne $env:GITHUB_SHA) { throw 'Artifacts came from a different commit.' }
-$order = @('RemoteFrame.Core','RemoteFrame.Rendering','RemoteFrame.AspNetCore','RemoteFrame.Office.Runtime.win-x64','RemoteFrame.Office.Windows')
-foreach ($required in $order) {
+$policy = & "$PSScriptRoot/Get-ReleasePackagePolicy.ps1" -Group $Group
+$order = $policy.Order
+foreach ($required in $policy.Required) {
     if (@($manifest.packages | Where-Object id -EQ $required).Count -ne 1) { throw "Missing or duplicate release package: $required" }
 }
-if (@($manifest.packages | Where-Object id -Match '\.Part[0-9]{3}$').Count -eq 0) { throw 'Missing runtime dependency parts.' }
+foreach ($component in $policy.PartPrefixes) {
+    if (@($manifest.packages | Where-Object id -Like "$component.Part*").Count -eq 0) { throw "Missing runtime dependency parts: $component" }
+}
 if (@($manifest.packages.id | Sort-Object -Unique).Count -ne @($manifest.packages).Count) { throw 'Duplicate package identities.' }
 foreach ($entry in $manifest.packages) {
     foreach ($dependency in $entry.dependencies) {
-        if ($dependency -notin $manifest.packages.id) { throw "Missing release dependency: $dependency" }
+        if ($dependency -notin $manifest.packages.id -and $dependency -notin $policy.ExternalDependencies) { throw "Missing release dependency: $dependency" }
+        if ($entry.dependencyVersions.$dependency -notin @($Version,"[$Version]","[$Version, )","[$Version,)")) { throw "Dependency must use this release version: $dependency" }
     }
     if ($entry.file -ne [IO.Path]::GetFileName($entry.file)) { throw 'Unsafe artifact file name.' }
-    if ($entry.id -notin $order -and $entry.id -notmatch '^RemoteFrame\.Office\.Runtime\.win-x64\.Part[0-9]{3}$') { throw 'Unexpected package identity.' }
+    if ($entry.id -notin $policy.Required -and -not @($policy.PartPrefixes | Where-Object { $entry.id -match ('^' + [regex]::Escape($_) + '\.Part[0-9]{3}$') }).Count) { throw 'Unexpected package identity.' }
     if ($entry.file -ne "$($entry.id).$Version.nupkg") { throw 'Package file name does not match its identity and release version.' }
     $file = Get-Item -LiteralPath "$Directory/$($entry.file)"
     if ($file.Length -ge 240000000 -or $file.Length -ne $entry.bytes -or (Get-FileHash $file.FullName).Hash -ne $entry.sha256) {

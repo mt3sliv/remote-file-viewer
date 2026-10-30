@@ -20,6 +20,7 @@ public sealed class RemoteFrameOptions
     public bool EnableOffice { get; set; }
     public bool EnableViewer { get; set; } = true;
     public bool FitStreamToViewport { get; set; }
+    public bool ShowSaveButton { get; set; }
     public bool PreferInstalledOfficeApplications { get; set; } = true;
     /// <summary>Optional per-request authorization for opaque file IDs. Also filters the configured file list.</summary>
     public Func<HttpContext, string, CancellationToken, ValueTask<bool>>? AuthorizeFileAsync { get; set; }
@@ -61,7 +62,7 @@ public static class RemoteFrameExtensions
         if (options.EnableViewer) RemoteFrameViewer.Map(routes);
         var fileMap = options.Files;
         var logger = endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("RemoteFrame");
-        routes.MapGet("/api/frame-settings", () => Results.Ok(new { defaults = options.DefaultFrameConfiguration, fitStreamToViewport = options.FitStreamToViewport,
+        routes.MapGet("/api/frame-settings", () => Results.Ok(new { defaults = options.DefaultFrameConfiguration, fitStreamToViewport = options.FitStreamToViewport, showSaveButton = options.ShowSaveButton,
             maxFramesPerSecond = options.MaxFramesPerSecond, maxCaptureWidth = options.MaxCaptureWidth,
             maxCaptureHeight = options.MaxCaptureHeight, maxPixels = options.MaxPixels }));
         routes.MapGet("/api/files", async (HttpContext ctx) =>
@@ -91,7 +92,7 @@ public static class RemoteFrameExtensions
             IRenderSession renderer;
             try { renderer = await provider.OpenAsync(filePath, ctx.RequestAborted); }
             catch (Exception ex) when (ex is IOException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-            { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the bundled Office runtime and server logs." }); }
+            { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the Office worker, installed applications or optional LibreOffice runtime, and server logs." }); }
             try
             {
                 await renderer.ConfigureAsync(configuration, ctx.RequestAborted);

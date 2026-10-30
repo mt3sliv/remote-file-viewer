@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const script = fs.readFileSync('src/RemoteFrame.AspNetCore/Viewer/viewer.js','utf8');
 const flush = async () => { for(let i=0;i<5;i++) await new Promise(setImmediate); };
-function app({fileId, pending, connectThrows=false}={}) {
+function app({fileId, pending, connectThrows=false, showSaveButton=true}={}) {
   const elements = new Map(), handlers = new Map(), requests = [], sockets = [];
   const element = id => {
     if(!elements.has(id)) elements.set(id, {value:'',checked:false,width:1280,height:800,disabled:false,
-      getContext:()=>({}),getBoundingClientRect:()=>({width:640}),focus(){},parentElement:{},
+      setAttribute(name,value){this[name]=value;},getContext:()=>({clearRect(){element(id).cleared=true;}}),getBoundingClientRect:()=>({width:640}),focus(){},parentElement:{},
       replaceChildren(...options){this.value=options[0]?.value||'';this.options=options;},
       addEventListener(name,fn){handlers.set(`${id}:${name}`,fn);},hasPointerCapture:()=>false});
     return elements.get(id);
@@ -29,7 +29,7 @@ function app({fileId, pending, connectThrows=false}={}) {
     ResizeObserver:class{observe(){}},setTimeout,clearTimeout,devicePixelRatio:1,innerHeight:1000,WebSocket:Socket,
     fetch:async(url,options)=>{
       requests.push({url,...options});
-      if(url.endsWith('/api/frame-settings'))return response({defaults:{framesPerSecond:12,captureWidth:1280,captureHeight:800,streamWidth:640,streamHeight:400},fitStreamToViewport:false,maxFramesPerSecond:24,maxCaptureWidth:3840,maxCaptureHeight:2160});
+      if(url.endsWith('/api/frame-settings'))return response({defaults:{framesPerSecond:12,captureWidth:1280,captureHeight:800,streamWidth:640,streamHeight:400},fitStreamToViewport:false,showSaveButton,maxFramesPerSecond:24,maxCaptureWidth:3840,maxCaptureHeight:2160});
       if(url.endsWith('/api/files'))return response(['opaque-id']);
       if(options.method==='DELETE')return {ok:true,status:204};
       if(options.method==='PUT')return response({configuration:JSON.parse(options.body)});
@@ -38,7 +38,7 @@ function app({fileId, pending, connectThrows=false}={}) {
     }
   };
   vm.createContext(sandbox);vm.runInContext(script,sandbox);
-  return {element,handlers,requests,sockets};
+  return {element,handlers,requests,sockets,document:sandbox.document};
 }
 test('Selected opaque IDs auto-open with PathBase, server capability and CSRF headers',async()=>{
   const fileId='private/<img onerror=x> & report';
@@ -90,4 +90,38 @@ test('Failed or disconnected sockets release sessions even if the upgrade never 
   viewer.sockets[0].onerror();viewer.sockets[0].onclose();viewer.sockets[0].onclose();await flush();
   assert.equal(viewer.requests.filter(x=>x.method==='DELETE').length,1);
   assert.equal(viewer.element('save').disabled,true);
+});
+
+test('Save visibility defaults hidden unless explicitly enabled; close clears and disables actions',async()=>{
+  for (const showSaveButton of [undefined,false,true]) {
+    const viewer=app({fileId:'opaque',showSaveButton:showSaveButton === undefined ? null : showSaveButton});await flush();
+    viewer.sockets[0].onopen();
+    assert.equal(viewer.element('save').hidden,showSaveButton!==true);
+    assert.equal(viewer.element('save').disabled,showSaveButton!==true);
+    await viewer.element('close').onclick();
+    assert.equal(viewer.element('screen').cleared,true);
+    assert.equal(viewer.element('screen')['aria-disabled'],'true');
+    assert.equal(viewer.element('close').disabled,true);
+    assert.equal(viewer.element('applySettings').disabled,true);
+    assert.equal(viewer.element('status').textContent,'Session closed');
+  }
+});
+
+test('Fullscreen toggles the viewer and follows browser Escape changes',async()=>{
+  const viewer=app({fileId:'opaque'});await flush();
+  const container=viewer.element('viewer');
+  container.requestFullscreen=async()=>{viewer.document.fullscreenElement=container;};
+  viewer.document.exitFullscreen=async()=>{viewer.document.fullscreenElement=null;};
+  viewer.sockets[0].onopen();
+  assert.equal(viewer.element('fullscreen').disabled,false);
+  await viewer.element('fullscreen').onclick();
+  viewer.handlers.get('document:fullscreenchange')();
+  assert.equal(viewer.element('fullscreen')['aria-pressed'],'true');
+  await viewer.element('fullscreen').onclick();
+  viewer.handlers.get('document:fullscreenchange')();
+  assert.equal(viewer.element('fullscreen').textContent,'Enter fullscreen');
+  await viewer.element('fullscreen').onclick();
+  viewer.document.fullscreenElement=null; // Escape is controlled by the browser.
+  viewer.handlers.get('document:fullscreenchange')();
+  assert.equal(viewer.element('fullscreen')['aria-pressed'],'false');
 });

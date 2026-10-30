@@ -2,8 +2,9 @@
 
 ASP.NET Core endpoints and an embedded browser viewer for .NET 10. Text rendering
 works on Windows and Linux. Install `RemoteFrame.Office.Windows` instead when you
-also need the complete Windows x64 Office runtime; it brings this package in
-transitively. This package alone does not contain native Office binaries.
+also need the Windows x64 worker for supported installed Office applications.
+Use `RemoteFrame.Office.Windows.WithLibreOffice` to additionally bundle LibreOffice.
+Both bring this package in transitively. This package alone contains no native binaries.
 
 ```shell
 dotnet add package RemoteFrame.AspNetCore --prerelease
@@ -160,7 +161,9 @@ when disconnected. File/session quotas and expiry are enforced server-side.
 
 With `EnableOffice = true` and the Windows x64 runtime, the worker prefers supported
 installed Excel/Word/LibreOffice applications before the bundled LibreOffice
-fallback. Set `PreferInstalledOfficeApplications = false` to force the bundle.
+fallback when its optional package is deployed. Set
+`PreferInstalledOfficeApplications = false` to force the bundle; without that
+package, this setting leaves no application candidates.
 Installed Microsoft Office requires its own installation/licensing. The packaged
 worker/helper is needed in either mode. Macro trust settings are not changed.
 

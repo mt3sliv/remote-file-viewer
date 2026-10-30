@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version Condition="'$(Version)' == ''">0.3.0-preview.10</Version>
+    <Version Condition="'$(Version)' == ''">0.3.0-preview.11</Version>
     <RemoteFramePackageVersion Condition="'$(RemoteFramePackageVersion)' == ''">$(Version)</RemoteFramePackageVersion>
     <Authors>mt3sliv</Authors>
     <RepositoryUrl>https://github.com/mt3sliv/remote-file-viewer</RepositoryUrl>

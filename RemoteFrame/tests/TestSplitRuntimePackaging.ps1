@@ -8,8 +8,9 @@ foreach ($name in 'office/program/soffice.exe','worker/worker.exe','office/progr
     [IO.File]::WriteAllBytes("$payload/$name",[Text.Encoding]::UTF8.GetBytes(('TEST FIXTURE ' + $name).PadRight(1500000,'x')))
 }
 Set-Content "$payload/notices/LICENSE.txt" 'TEST FIXTURE LICENSE'
+Set-Content "$payload/worker/LICENSE.txt" 'TEST FIXTURE WORKER LICENSE'
 [IO.File]::WriteAllText("$payload/notices/NOTICE.txt",'TEST FIXTURE LARGE NOTICE'.PadRight(1100000,'x'))
-& dotnet run --project "$root/tools/RemoteFrame.RuntimeCheck" -c Release -- --create $payload win-x64 fixture abc office/program/soffice.exe worker/worker.exe notices/LICENSE.txt notices/NOTICE.txt
+& dotnet run --project "$root/tools/RemoteFrame.RuntimeCheck" -c Release -- --create $payload win-x64 fixture abc office/program/soffice.exe worker/worker.exe notices/LICENSE.txt notices/NOTICE.txt worker/LICENSE.txt
 if ($LASTEXITCODE -ne 0) { throw 'Fixture manifest creation failed.' }
 & "$root/packaging/Pack-SplitRuntime.ps1" -Payload $payload -Version $version -OutputDirectory "$test/feed" -PartBudgetBytes 2100000
 $parts = @(Get-ChildItem "$test/feed" -Filter '*Part*.nupkg')
@@ -48,3 +49,35 @@ foreach ($operation in 'build','publish') {
     if ($LASTEXITCODE -ne 0) { throw "Reassembled runtime failed validation after $operation." }
 }
 Write-Output 'PASS: A clean consumer restores all split dependencies and preserves every runtime byte during build and publish, including extensionless and hidden files.'
+
+$components = "$test/components-feed"
+& "$root/packaging/Pack-OfficeComponents.ps1" -Payload $payload -Version $version -OutputDirectory $components -PartBudgetBytes 2100000
+@"
+<configuration><packageSources><clear/><add key="RemoteFrameLocal" value="$components"/><add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>
+"@ | Set-Content "$test/consumer/NuGet.Config"
+foreach ($mode in 'worker','combined') {
+    $id = if ($mode -eq 'worker') { 'RemoteFrame.Office.Worker.Runtime.win-x64' } else { 'RemoteFrame.Office.Runtime.win-x64' }
+    @"
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="$id" Version="[$version]" /></ItemGroup></Project>
+"@ | Set-Content "$test/consumer/consumer.csproj"
+    foreach ($operation in 'build','publish') {
+        $output = "$test/$mode-$operation"
+        & dotnet $operation "$test/consumer/consumer.csproj" -c Release -o $output "-p:RestorePackagesPath=$test/component-cache-$mode"
+        if ($LASTEXITCODE -ne 0) { throw "Component consumer $mode $operation failed." }
+        $deployed = "$output/remote-frame/win-x64"
+        if ($mode -eq 'worker') {
+            if (Test-Path "$deployed/components/libreoffice") { throw 'Worker-only deploy included LibreOffice.' }
+            $assets = Get-Content "$test/consumer/obj/project.assets.json" -Raw
+            if ($assets -match 'RemoteFrame.LibreOffice') { throw 'Worker-only restore included LibreOffice dependencies.' }
+        }
+        foreach ($file in Get-ChildItem $payload -Recurse -Force -File | Where-Object Name -NE 'runtime.json') {
+            $relative = [IO.Path]::GetRelativePath($payload,$file.FullName).Replace('\','/')
+            $component = if ($relative.StartsWith('worker/')) { 'worker' } else { 'libreoffice' }
+            if ($mode -eq 'worker' -and $component -ne 'worker') { continue }
+            if ((Get-FileHash $file.FullName).Hash -ne (Get-FileHash "$deployed/components/$component/$relative").Hash) { throw "Component lost or changed $relative" }
+        }
+        & dotnet run --project "$root/tools/RemoteFrame.RuntimeCheck" -c Release -- $deployed win-x64
+        if ($LASTEXITCODE -ne 0) { throw 'Component deployment validation failed.' }
+    }
+}
+Write-Output 'PASS: Worker-only restore/build/publish excludes LibreOffice; optional engine restores the complete byte-identical engine and independent manifests.'
