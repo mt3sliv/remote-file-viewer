@@ -42,16 +42,21 @@ foreach ($file in Get-ChildItem -LiteralPath $Payload -Recurse -Force -File | So
 if ($files.Count -gt 0) { $parts.Add(@($files.ToArray())) }
 if ($parts.Count -eq 0) { throw 'Empty runtime payload.' }
 $license = Get-Content "$root/../LICENSE" -Raw
-$license += "`n`nBundled third-party components retain their own licenses and notices:`n"
+$license += "`n`nThe MIT license above applies to RemoteFrame code. Bundled third-party components retain their own licenses. Full license texts and third-party notices are included in this package at the following paths and remain in the deployed runtime at their original paths:`n"
+$licenseItems = [Collections.Generic.List[string]]::new()
 $runtimeManifest = Get-Content "$Payload/runtime.json" -Raw | ConvertFrom-Json
 foreach ($relative in $runtimeManifest.licenses | Sort-Object -Unique) {
     $notice = Get-Item -LiteralPath (Join-Path $Payload $relative)
-    $license += "`n--- $($notice.Name) ---`n" + (Get-Content -LiteralPath $notice.FullName -Raw)
+    $license += "`nlicenses/$relative"
+    $directory = [IO.Path]::GetDirectoryName($relative).Replace('\','/')
+    $licenseItems.Add(('<None Include="{0}" Pack="true" PackagePath="licenses/{1}/" />' -f (Xml $notice.FullName),(Xml $directory)))
 }
 [IO.File]::WriteAllText("$work/package-license.txt",$license)
+if ((Get-Item "$work/package-license.txt").Length -ge 1000000) { throw 'NuGet license metadata must be below 1 MB.' }
 [IO.File]::WriteAllText("$work/_._",'')
 Copy-Item "$PSScriptRoot/README.md" "$work/README.md"
 $commonItems = '<None Include="_._" Pack="true" PackagePath="lib/net10.0/" /><None Include="README.md" Pack="true" PackagePath="/" />'
+$commonItems += $licenseItems -join "`n"
 $dependencies = [Collections.Generic.List[string]]::new()
 for ($index = 0; $index -lt $parts.Count; $index++) {
     $partId = "$id.Part$('{0:D3}' -f ($index + 1))"

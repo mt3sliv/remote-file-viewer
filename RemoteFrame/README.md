@@ -10,7 +10,7 @@ RemoteFrame is an ASP.NET Core middleware/endpoint library for server-side text 
 
 ## Run the local demo
 
-The demo consumes the aggregate `RemoteFrame.Office.Windows` NuGet package, which includes the middleware and a transitive native runtime. The configured version is `0.3.0-preview.8`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
+The demo consumes the aggregate `RemoteFrame.Office.Windows` NuGet package, which includes the middleware and a transitive native runtime. The configured version is `0.3.0-preview.9`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
 
 ```powershell
 dotnet run --project RemoteFrame/src/RemoteFrame.Server
@@ -22,7 +22,7 @@ All files in `samples` are copied into the demo's build/publish output and regis
 
 ## Use in your web app
 
-Install `RemoteFrame.Office.Windows` from the local feed (version `0.3.0-preview.8`). It brings in the ASP.NET Core library and native runtime transitively. These preview packages are local artifacts, not published NuGet.org releases.
+Install `RemoteFrame.Office.Windows` from the local feed (version `0.3.0-preview.9`). It brings in the ASP.NET Core library and native runtime transitively. These preview packages are local artifacts, not published NuGet.org releases.
 
 ```csharp
 using RemoteFrame.AspNetCore;
@@ -115,7 +115,7 @@ pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Source
 pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Source -SourceBuildReceipt C:/build/source-build.json
 ```
 
-Binary mode is the default and needs no Cygwin/Clang/LibreOffice build. `packaging/libreoffice/binary.lock.json` pins the official MSI URL/checksum. It downloads once, extracts without installing Office, and verifies the archive and full extracted inventory before reuse. Both modes compile our worker/input helper, include licenses/CRT, run bundled-only Writer/Calc edit-save checks and create hash manifests before packaging. Binary releases default to `0.3.0-preview.8`; source releases default to `0.3.0-source.2`. Managed packages follow the selected distribution version. Source mode retains strict recipe/receipt validation and patch provenance; binary provenance never claims a successful local upstream source build.
+Binary mode is the default and needs no Cygwin/Clang/LibreOffice build. `packaging/libreoffice/binary.lock.json` pins the official MSI URL/checksum. It downloads once, extracts without installing Office, and verifies the archive and full extracted inventory before reuse. Both modes compile our worker/input helper, include licenses/CRT, run bundled-only Writer/Calc edit-save checks and create hash manifests before packaging. Binary releases default to `0.3.0-preview.9`; source releases default to `0.3.0-source.2`. Managed packages follow the selected distribution version. Source mode retains strict recipe/receipt validation and patch provenance; binary provenance never claims a successful local upstream source build.
 
 Then restore/build the demo normally; the native dependency copies its complete payload into build and publish output. To consume a source release, pass `-p:RemoteFramePackageVersion=0.3.0-source.2`. `UseRemoteFramePackages=false` remains a separate managed development switch and does not select or compile an engine. Consumers install the aggregate package only. Existing native/aggregate package versions are never overwritten; choose new `-PackageVersion` and `-ManagedPackageVersion` values for later releases.
 

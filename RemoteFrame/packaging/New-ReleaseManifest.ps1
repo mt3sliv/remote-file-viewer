@@ -11,6 +11,11 @@ $items = @(foreach ($file in Get-ChildItem $Directory -Filter "*.$Version.nupkg"
         try { [xml]$spec = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $id = [string]$spec.package.metadata.id
         if ($spec.package.metadata.version -ne $Version -or $id -notlike 'RemoteFrame.*') { throw 'Unexpected release package identity.' }
+        $licenseNode = $spec.SelectSingleNode("//*[local-name()='metadata']/*[local-name()='license' and @type='file']")
+        if ($licenseNode) {
+            $licenseEntry = $zip.GetEntry($licenseNode.InnerText)
+            if (-not $licenseEntry -or $licenseEntry.Length -ge 1000000) { throw "NuGet license metadata is missing or exceeds the 1 MB limit: $id" }
+        }
         $dependencies = @($spec.SelectNodes("//*[local-name()='dependency']") | ForEach-Object { [string]$_.id } | Where-Object { $_ -like 'RemoteFrame.*' })
         [ordered]@{ id=$id; file=$file.Name; sha256=(Get-FileHash $file.FullName).Hash; bytes=$file.Length; dependencies=$dependencies }
     } finally { $zip.Dispose() }

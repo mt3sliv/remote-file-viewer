@@ -53,8 +53,8 @@ an already published package version.
 For example, after committing the intended release:
 
 ```powershell
-git tag v0.3.0-preview.8
-git push origin v0.3.0-preview.8
+git tag v0.3.0-preview.9
+git push origin v0.3.0-preview.9
 ```
 
 This runs the complete CI workflow, then publishes its verified artifacts to
@@ -80,8 +80,10 @@ coordinator pins all parts to exact versions. `RemoteFrame.Office.Windows` keeps
 its existing package ID and installation API. Restore pulls all parts; build and
 publish assemble them into the same `remote-frame/win-x64` tree. The unchanged
 runtime manifest verifies the complete reassembled inventory. Original component
-licenses and notices remain present, and each part includes combined license
-metadata for the wrapper and bundled components.
+licenses and notices remain present. Each part includes a short license summary
+for NuGet's metadata plus all full license texts under `licenses/`. The metadata
+file is checked against NuGet.org's separate 1 MB license-file limit; full notices
+are preserved without truncation, even when individually larger than 1 MB.
 
 No installation-time download code or NuGet install script is introduced.
 The generic split-packager accepts Windows/Linux runtime identifiers, but this
@@ -97,8 +99,8 @@ pwsh -File tests/TestPointerInput.ps1
 pwsh -File packaging/Build-Distribution.ps1 -OfficeEngine Binary
 dotnet build src/RemoteFrame.Server -c Release
 pwsh -File tests/TestDemoRuntime.ps1 -Configuration Release
-pwsh -File packaging/New-ReleaseManifest.ps1 -Version 0.3.0-preview.8
-pwsh -File packaging/Publish-NuGet.ps1 -Version 0.3.0-preview.8 -ValidateOnly
+pwsh -File packaging/New-ReleaseManifest.ps1 -Version 0.3.0-preview.9
+pwsh -File packaging/Publish-NuGet.ps1 -Version 0.3.0-preview.9 -ValidateOnly
 ```
 
 The split fixture uses a separate feed and clean restore cache, then compares
@@ -111,6 +113,7 @@ library/coordinator packages); the largest part was about 74.7 MB. The packaged
 demo built with zero warnings/errors and its complete 19,698-file runtime passed
 hash validation. Managed, browser, native pointer/modal, binary-provenance, clean
 split restore/build/publish, release-policy, and workflow syntax checks passed.
-These are local Windows results; the Ubuntu and hosted Windows jobs still need
-their first GitHub run. No release tag or NuGet.org package was published during
-this setup.
+GitHub CI also passed on Ubuntu and hosted Windows. The first preview.8 upload was
+rejected before any package was published because its combined license metadata
+exceeded NuGet.org's 1 MB limit. Preview.9 separates the short metadata summary
+from full license files and adds regression tests for oversized license metadata.

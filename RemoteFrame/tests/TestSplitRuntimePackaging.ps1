@@ -5,15 +5,28 @@ $payload = "$test/payload"
 $version = '0.0.0-split.g' + [Guid]::NewGuid().ToString('N')
 New-Item -ItemType Directory -Force "$payload/office/program","$payload/worker","$payload/notices","$test/feed","$test/consumer" | Out-Null
 foreach ($name in 'office/program/soffice.exe','worker/worker.exe','office/program/extensionless','office/program/.dir') {
-    [IO.File]::WriteAllBytes("$payload/$name",[Text.Encoding]::UTF8.GetBytes(('TEST FIXTURE ' + $name).PadRight(3000,'x')))
+    [IO.File]::WriteAllBytes("$payload/$name",[Text.Encoding]::UTF8.GetBytes(('TEST FIXTURE ' + $name).PadRight(1500000,'x')))
 }
 Set-Content "$payload/notices/LICENSE.txt" 'TEST FIXTURE LICENSE'
-Set-Content "$payload/notices/NOTICE.txt" 'TEST FIXTURE NOTICE'
+[IO.File]::WriteAllText("$payload/notices/NOTICE.txt",'TEST FIXTURE LARGE NOTICE'.PadRight(1100000,'x'))
 & dotnet run --project "$root/tools/RemoteFrame.RuntimeCheck" -c Release -- --create $payload win-x64 fixture abc office/program/soffice.exe worker/worker.exe notices/LICENSE.txt notices/NOTICE.txt
 if ($LASTEXITCODE -ne 0) { throw 'Fixture manifest creation failed.' }
-& "$root/packaging/Pack-SplitRuntime.ps1" -Payload $payload -Version $version -OutputDirectory "$test/feed" -PartBudgetBytes 4096
+& "$root/packaging/Pack-SplitRuntime.ps1" -Payload $payload -Version $version -OutputDirectory "$test/feed" -PartBudgetBytes 2100000
 $parts = @(Get-ChildItem "$test/feed" -Filter '*Part*.nupkg')
 if ($parts.Count -lt 3) { throw 'Fixture did not exercise multiple dependency parts.' }
+foreach ($package in Get-ChildItem "$test/feed" -Filter '*.nupkg') {
+    $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
+    try {
+        $license = $zip.GetEntry('package-license.txt')
+        if (-not $license -or $license.Length -ge 1000000) { throw 'NuGet license metadata exceeds its size limit.' }
+        $notice = $zip.GetEntry('licenses/notices/NOTICE.txt')
+        if (-not $notice -or $notice.Length -ne 1100000) { throw 'Full third-party notice was lost or truncated.' }
+        $stream = $notice.Open()
+        try { $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)) } finally { $stream.Dispose() }
+        if ($hash -ne (Get-FileHash "$payload/notices/NOTICE.txt").Hash) { throw 'Third-party notice content changed.' }
+    } finally { $zip.Dispose() }
+}
+Write-Output 'PASS: License metadata stays below 1 MB while every package retains the full larger third-party notice.'
 @"
 <configuration><packageSources><clear/><add key="RemoteFrameLocal" value="$test/feed"/><add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>
 "@ | Set-Content "$test/consumer/NuGet.Config"

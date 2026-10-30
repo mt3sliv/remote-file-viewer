@@ -32,3 +32,20 @@ $entries[0].file = "RemoteFrame.Core.$version.nupkg"
 $manifest.packages = @($entries | Select-Object -Skip 1); Save-Manifest
 Reject { & "$root/packaging/Publish-NuGet.ps1" -Version $version -Directory $test -ValidateOnly } 'Incomplete release set'
 Write-Output 'PASS: Release versions and artifact integrity checks.'
+$invalid = "$test/invalid-license"
+New-Item -ItemType Directory -Force $invalid | Out-Null
+$zip = [IO.Compression.ZipFile]::Open("$invalid/RemoteFrame.Core.$version.nupkg",[IO.Compression.ZipArchiveMode]::Create)
+try {
+    $writer = [IO.StreamWriter]::new($zip.CreateEntry('RemoteFrame.Core.nuspec').Open())
+    try { $writer.Write("<package><metadata><id>RemoteFrame.Core</id><version>$version</version><license type='file'>license.txt</license></metadata></package>") } finally { $writer.Dispose() }
+    $writer = [IO.StreamWriter]::new($zip.CreateEntry('license.txt').Open())
+    try { $writer.Write('x' * 1100000) } finally { $writer.Dispose() }
+} finally { $zip.Dispose() }
+$rejected = $false
+try { & "$root/packaging/New-ReleaseManifest.ps1" -Version $version -Directory $invalid | Out-Null }
+catch {
+    if ($_.Exception.Message -notlike '*license metadata*1 MB*') { throw }
+    $rejected = $true
+}
+if (-not $rejected) { throw 'Oversized NuGet license metadata was accepted.' }
+Write-Output 'PASS: NuGet license metadata above 1 MB is rejected before publication.'
