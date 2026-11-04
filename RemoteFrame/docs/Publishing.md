@@ -111,9 +111,15 @@ the run, downloads its retained artifact and validates version, commit and hashe
 before requesting a publishing key. It publishes the verified artifact with
 existing package versions skipped. No tag is moved and no packages are rebuilt.
 
-Dependencies are uploaded before their coordinators. NuGet.org may take time
-to index new packages after upload; the action does not claim immediate search
-visibility. Local validation uses `-ValidateOnly` and never obtains a publishing key.
+Dependencies are uploaded before their coordinators. After each upload (including
+skipped duplicates), publication waits for that exact version to appear in the
+NuGet flat-container version index and for its package download to return HTTP 200.
+Checks make up to 20 attempts with 15 seconds between attempts and bounded HTTP
+timeouts. If a package remains unavailable, the job fails before uploading its
+dependents. Check NuGet.org Manage Packages for pending or failed validation, then
+rerun the publish job with its existing verified artifacts. This confirms restore
+availability, not search visibility. Local validation uses `-ValidateOnly` and
+never obtains a publishing key or calls the availability probe.
 
 ## Runtime size and installation
 

@@ -36,4 +36,5 @@ $packages = $manifest.packages | Sort-Object @{Expression={ if ($_.id -match '\.
 foreach ($entry in $packages) {
     & dotnet nuget push "$Directory/$($entry.file)" --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate --timeout 900
     if ($LASTEXITCODE -ne 0) { throw "NuGet publish failed: $($entry.id). Rerun the publish job to retry existing artifacts." }
+    & "$PSScriptRoot/Wait-NuGetPackage.ps1" -PackageId $entry.id -Version $Version
 }
