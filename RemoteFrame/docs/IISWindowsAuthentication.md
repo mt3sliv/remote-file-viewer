@@ -82,11 +82,24 @@ Rebuild the Windows worker runtime along with the managed library: token-launche
 workers use the new `--pipe` protocol option. Existing service launches retain
 redirected stdin/stdout, and custom host launchers remain supported.
 
-The managed regression suite includes a token-launch child-process probe. It
-skips native launch only for error 1314 (missing privilege) on ordinary developer
-accounts. Set `REMOTEFRAME_REQUIRE_TOKEN_LAUNCH=1` on a provisioned Windows test
-host to make that condition fail the check. The probe verifies user SID, host
-session, argument quoting, private temporary storage, pipe communication and exit.
+The managed regression suite always checks cross-process pipe communication,
+argument quoting, worker startup errors and cancellation. Native caller-token
+process creation is a separate, opt-in integration probe: generic hosted runners
+can deny it with access denied (5) or privilege not held (1314), even when ordinary
+process creation works. A skipped native probe is not a successful token-launch
+validation.
+
+On a provisioned Windows test host, require the native probe with:
+
+```powershell
+$env:REMOTEFRAME_REQUIRE_TOKEN_LAUNCH = '1'
+pwsh -File packaging/Test-Managed.ps1
+```
+
+In this mode every native launch error, including 5 and 1314, fails the suite.
+The probe verifies user SID, host session, argument quoting, private temporary
+storage, pipe communication and exit. Production launch failures also always fail
+explicitly; this test selection does not change runtime identity behavior.
 
 Before deploying, test real authenticated IIS requests from two Windows accounts,
 the intended profiles and Office installations, share delegation, saved-file
