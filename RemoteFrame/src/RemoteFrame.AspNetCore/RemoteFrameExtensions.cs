@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -26,6 +25,9 @@ public sealed class RemoteFrameOptions
     public ApplicationSessionOptions ApplicationSession { get; set; } = new();
     /// <summary>Optional per-request authorization for opaque file IDs. Also filters the configured file list.</summary>
     public Func<HttpContext, string, CancellationToken, ValueTask<bool>>? AuthorizeFileAsync { get; set; }
+    /// <summary>Optional batch filter for GET /api/files. Return allowed candidate IDs; unknown IDs are ignored.
+    /// AuthorizeFileAsync and ResolveFileAsync still apply. This callback does not authorize session creation.</summary>
+    public Func<HttpContext, IReadOnlyList<string>, CancellationToken, ValueTask<IReadOnlyCollection<string>>>? AuthorizeFilesAsync { get; set; }
     /// <summary>Optional server-side resolver for a host-managed catalog. Return null for unknown or inaccessible IDs.</summary>
     public Func<HttpContext, string, CancellationToken, ValueTask<string?>>? ResolveFileAsync { get; set; }
     public FrameConfiguration DefaultFrameConfiguration { get; set; } = new();
@@ -59,7 +61,7 @@ public static class RemoteFrameExtensions
         var options = endpoints.ServiceProvider.GetRequiredService<IOptions<RemoteFrameOptions>>().Value;
         if (options.RequireAuthorization)
             routes.RequireAuthorization(policy => policy.RequireAuthenticatedUser()
-                .RequireAssertion(context => !string.IsNullOrWhiteSpace(context.User.FindFirstValue(ClaimTypes.NameIdentifier))));
+                .RequireAssertion(context => SessionOwner.Identifier(context.User) is not null));
         else routes.AllowAnonymous();
         if (options.EnableViewer) RemoteFrameViewer.Map(routes);
         var fileMap = options.Files;
@@ -69,9 +71,18 @@ public static class RemoteFrameExtensions
             maxCaptureHeight = options.MaxCaptureHeight, maxPixels = options.MaxPixels }));
         routes.MapGet("/api/files", async (HttpContext ctx) =>
         {
+            var candidates = fileMap.Keys.OrderBy(x => x).ToArray();
+            HashSet<string>? batchAllowed = null;
+            if (options.AuthorizeFilesAsync is not null)
+            {
+                var filtered = await options.AuthorizeFilesAsync(ctx, Array.AsReadOnly(candidates), ctx.RequestAborted)
+                    ?? throw new InvalidOperationException("AuthorizeFilesAsync must return a collection of allowed IDs.");
+                batchAllowed = new HashSet<string>(filtered, StringComparer.Ordinal);
+            }
             var allowed = new List<string>();
-            foreach (var id in fileMap.Keys.OrderBy(x => x))
-                if ((options.AuthorizeFileAsync is null || await options.AuthorizeFileAsync(ctx, id, ctx.RequestAborted)) &&
+            foreach (var id in candidates)
+                if ((batchAllowed is null || batchAllowed.Contains(id)) &&
+                    (options.AuthorizeFileAsync is null || await options.AuthorizeFileAsync(ctx, id, ctx.RequestAborted)) &&
                     (options.ResolveFileAsync is null || await options.ResolveFileAsync(ctx, id, ctx.RequestAborted) is not null)) allowed.Add(id);
             return Results.Ok(allowed);
         });
@@ -211,7 +222,7 @@ public static class RemoteFrameExtensions
 
         return routes;
     }
-    private static string Owner(HttpContext ctx) => ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "local-demo";
+    private static string Owner(HttpContext ctx) => SessionOwner.Identifier(ctx.User) ?? "local-demo";
     private static bool SameOrigin(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue("Origin", out var header)) return !ctx.WebSockets.IsWebSocketRequest;

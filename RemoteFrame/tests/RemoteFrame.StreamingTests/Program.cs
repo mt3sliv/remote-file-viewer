@@ -18,6 +18,7 @@ using RemoteFrame.Core;
 using RemoteFrame.Rendering;
 
 await IdentityChecks.RunAsync();
+await AuthorizationChecks.RunAsync();
 
 static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS: " + message); }
 static RemoteFrameOptions BoundSettings(string json, Action<RemoteFrameOptions>? configure = null)

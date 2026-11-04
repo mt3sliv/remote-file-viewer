@@ -32,8 +32,13 @@ app.Run();
 ```
 
 By default, every RemoteFrame route requires an authenticated user with a nonempty
-`ClaimTypes.NameIdentifier`. Session creation, configuration and WebSocket access
-are bound to that identifier. Keep it stable and unique per user. Additional host
+`ClaimTypes.NameIdentifier`, or an authenticated Windows identity with a user SID.
+An explicit `NameIdentifier` takes precedence; otherwise Windows sessions use
+`windows:<SID>` as their owner identifier. A generic SID claim alone does not
+enable this fallback. The host must still configure Windows authentication;
+RemoteFrame does not enable an authentication scheme or sign users in.
+Session creation, configuration and WebSocket access are bound to the same
+identifier. Keep it stable and unique per user. Additional host
 endpoint policies can be applied to the returned route group. Only a local,
 loopback-only demo should set `RequireAuthorization = false`.
 
@@ -84,6 +89,30 @@ options.AuthorizeFileAsync = (context, id, cancellationToken) =>
     ValueTask.FromResult(id != "finance-report" || context.User.IsInRole("Finance"));
 ```
 
+For batch filtering of `GET /api/files`, set `AuthorizeFilesAsync`:
+
+```csharp
+options.AuthorizeFilesAsync = (context, candidateIds, cancellationToken) =>
+    ValueTask.FromResult<IReadOnlyCollection<string>>(
+        candidateIds.Where(id => id != "finance-report" ||
+            context.User.IsInRole("Finance")).ToArray());
+```
+
+The callback runs once per authorized listing request and receives a read-only,
+sorted snapshot of configured IDs and the request cancellation token. It can use
+an asynchronous database permission lookup to return the allowed IDs in a batch.
+Only returned IDs present in the candidate snapshot are considered, using ordinal,
+case-sensitive matching. Unknown IDs and duplicates cannot add list entries;
+the catalog's sort order is preserved. Return an empty collection to list nothing.
+A null result or callback failure fails the request without returning a file list.
+
+Batch filtering runs before the existing per-file authorization and resolution
+checks. When both authorization callbacks are configured, an entry must pass both.
+Leaving `AuthorizeFilesAsync` unset preserves the per-file listing behavior.
+This callback controls listing only: it does not restrict direct session opens.
+Use `AuthorizeFileAsync` and/or an access-checking `ResolveFileAsync` to enforce
+permission when opening a file, including files omitted from the listing.
+
 For a database/storage-backed catalog, set `ResolveFileAsync` instead of putting
 all paths into configuration:
 
@@ -100,7 +129,7 @@ must check the current user's access and return a trusted server path, or null
 for inaccessible/unknown IDs. Do not treat the ID as a path or blindly append it
 to a storage directory. The resolver supersedes the static path lookup; the optional
 `AuthorizeFileAsync` check runs first. Denied/unknown opens return 404. Configured
-list entries are filtered through both callbacks when supplied. `/api/files` does
+list entries are filtered through authorization and resolution callbacks when supplied. `/api/files` does
 not enumerate a dynamic catalog; your application owns that list and links directly
 to the viewer. No disk paths are included in session responses or viewer markup.
 
