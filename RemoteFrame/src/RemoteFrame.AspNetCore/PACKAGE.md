@@ -175,3 +175,55 @@ native payloads are not published. Managed text rendering is portable.
 
 [Source](https://github.com/mt3sliv/remote-file-viewer) ·
 [Windows runtime guide](https://github.com/mt3sliv/remote-file-viewer/blob/dev/RemoteFrame/packaging/OFFICE-WINDOWS-PACKAGE.md)
+# Shared files and identities
+
+File transfer and Office process identity are configured separately:
+
+```json
+{
+  "RemoteFrame": {
+    "FileAccess": {
+      "StageLocally": true,
+      "DownloadIdentity": "Caller",
+      "SaveBackIdentity": "Caller"
+    },
+    "ApplicationSession": { "ProcessIdentity": "Service" }
+  }
+}
+```
+
+All identities default to `Service`; `StageLocally` defaults to `true`. Register
+share files using UNC paths in `Files` or `ResolveFileAsync`. Each session stages
+the source to a unique local directory before opening its provider. Office keeps
+its existing separate application working copy. Saved changes are copied back
+under `SaveBackIdentity`, with content-hash conflict checks and a temporary file
+beside the source followed by replacement. These checks are optimistic; they do
+not lock out other editors between the final check and replacement. The selected
+save identity needs read, create, replace and delete permissions in the source
+directory. Closing a session cleans up staging and does not invoke Office Save.
+Unsaved application edits remain unsaved.
+
+`Caller` file access requires an authenticated `WindowsIdentity` on the opening
+HTTP request. Its token is duplicated for the session and disposed on closure.
+Cookie/JWT identity alone does not provide Windows credentials. Remote SMB access
+also requires suitable Windows delegation. Missing credentials or denied access
+fail without retrying as the service. File authorization callbacks still apply.
+
+`ProcessIdentity = Caller` requires a host implementation of
+`options.ApplicationSession.LaunchCallerWorkerAsync`. It receives the opening
+`HttpContext`, configured `ProcessStartInfo`, and cancellation token. The host
+must start the worker using the caller's primary Windows token, preserve its
+redirected stdin/stdout streams and arguments, and grant that identity access to
+the staged directory (the document argument identifies it), runtime files and
+application installation. The library verifies the returned worker's user SID
+against the caller before initializing the session and owns process disposal.
+There is no built-in token-based process launcher. Ordinary `Process.Start`
+inside `RunImpersonated` does not change the process identity; see
+[Microsoft's impersonation documentation](https://learn.microsoft.com/en-us/windows/win32/secauthz/impersonation-levels).
+The host launcher must handle profiles, privileges and ACLs appropriate to its
+deployment. Caller process mode is supported only for Office providers.
+
+With `StageLocally = false`, only service identities are accepted and the original
+provider path is used. Office still makes its own working copy. Text rendering is
+read-only in either mode. Live delegated-share and alternate-account Office
+acceptance checks must be performed in the deployment environment.

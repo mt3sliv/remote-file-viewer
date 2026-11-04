@@ -11,6 +11,9 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
         { ".doc", ".docx", ".odt", ".xls", ".xlsx", ".xlsm", ".ods", ".ppt", ".pptx", ".odp" };
     public bool CanOpen(string path) => options.Value.EnableOffice && Extensions.Contains(Path.GetExtension(path));
     public async ValueTask<IRenderSession> OpenAsync(string path, CancellationToken ct)
+        => await OpenAsync(path, null, ct);
+
+    internal async ValueTask<IRenderSession> OpenAsync(string path, Func<ProcessStartInfo, CancellationToken, ValueTask<Process>>? launcher, CancellationToken ct)
     {
         var runtime = BundledOfficeRuntime.Load();
         var start = new ProcessStartInfo(runtime.WorkerPath)
@@ -23,7 +26,9 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
         start.ArgumentList.Add(runtime.EnginePath);
         start.ArgumentList.Add(Path.GetFullPath(path));
         if (!options.Value.PreferInstalledOfficeApplications) start.ArgumentList.Add("--bundled-only");
-        var process = Process.Start(start) ?? throw new IOException("Cannot start the bundled Office worker.");
+        var process = launcher is null
+            ? Process.Start(start) ?? throw new IOException("Cannot start the bundled Office worker.")
+            : await launcher(start, ct);
         var session = new WorkerSession(process);
         try { await session.CaptureAsync(ct); return session; }
         catch { await session.DisposeAsync(); throw; }

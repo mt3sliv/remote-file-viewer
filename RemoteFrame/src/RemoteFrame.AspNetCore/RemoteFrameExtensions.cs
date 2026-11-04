@@ -22,6 +22,8 @@ public sealed class RemoteFrameOptions
     public bool FitStreamToViewport { get; set; }
     public bool ShowSaveButton { get; set; }
     public bool PreferInstalledOfficeApplications { get; set; } = true;
+    public FileAccessOptions FileAccess { get; set; } = new();
+    public ApplicationSessionOptions ApplicationSession { get; set; } = new();
     /// <summary>Optional per-request authorization for opaque file IDs. Also filters the configured file list.</summary>
     public Func<HttpContext, string, CancellationToken, ValueTask<bool>>? AuthorizeFileAsync { get; set; }
     /// <summary>Optional server-side resolver for a host-managed catalog. Return null for unknown or inaccessible IDs.</summary>
@@ -85,13 +87,13 @@ public static class RemoteFrameExtensions
             if (string.IsNullOrWhiteSpace(filePath)) return Results.NotFound();
             var provider = providers.FirstOrDefault(x => x.CanOpen(filePath));
             if (provider is null) return Results.BadRequest(new { error = "No provider supports this extension." });
-            if (!File.Exists(filePath)) return Results.NotFound();
             var configuration = request.Configuration ?? options.DefaultFrameConfiguration;
             try { options.Validate(configuration); }
             catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
             IRenderSession renderer;
-            try { renderer = await provider.OpenAsync(filePath, ctx.RequestAborted); }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
+            try { renderer = await IdentityRenderSession.OpenAsync(provider, filePath, ctx, options, ctx.RequestAborted); }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return Results.NotFound(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
             { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the Office worker, installed applications or optional LibreOffice runtime, and server logs." }); }
             try
             {
