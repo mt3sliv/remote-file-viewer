@@ -11,7 +11,7 @@ RemoteFrame is an ASP.NET Core middleware/endpoint library for server-side text 
 
 ## Run the local demo
 
-The demo consumes `RemoteFrame.Office.Windows.WithLibreOffice`, which includes the middleware, worker and bundled engine. The configured development version is `0.3.0-preview.11`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
+The demo consumes `RemoteFrame.Office.Windows.WithLibreOffice`, which includes the middleware, worker and bundled engine. The development version comes from `Directory.Build.props`; first build it into `artifacts/packages` with `pwsh -File packaging/Build-Distribution.ps1`. This defaults to verified upstream engine binaries and rebuilds our worker without compiling LibreOffice. Run:
 
 ```powershell
 dotnet run --project RemoteFrame/src/RemoteFrame.Server

@@ -50,7 +50,22 @@ See [NuGet Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org
 
 ## Releasing
 
-The development default version lives in `Directory.Build.props`. Release tags
+The development default version lives in `Directory.Build.props`, the shared
+source for managed libraries, runtime packaging and the demo's package references.
+From the repository root, increment it without editing XML:
+
+```powershell
+pwsh -File RemoteFrame/packaging/Bump-Version.ps1 -WhatIf
+pwsh -File RemoteFrame/packaging/Bump-Version.ps1
+```
+
+The command increments the last numeric prerelease identifier (for example,
+`preview.11` to `preview.12`), or the patch number for a stable version.
+Use `-Version 0.4.0-preview.1` to choose a new release series explicitly.
+Commit the resulting `Directory.Build.props` change along with the release changes.
+Ordinary pushes run checks without changing versions or publishing packages.
+
+Release tags
 override it consistently for managed packages, the worker, runtime parts,
 runtime coordinator and Windows aggregate. Use a fresh version; do not overwrite
 an already published package version.
@@ -58,8 +73,9 @@ an already published package version.
 For example, after committing the intended release:
 
 ```powershell
-git tag v0.3.0-preview.11
-git push origin v0.3.0-preview.11
+$version = ./RemoteFrame/packaging/Get-ReleaseVersion.ps1
+git tag "v$version"
+git push origin "v$version"
 ```
 
 This starts managed, worker and LibreOffice builds in parallel. Publishing proceeds
