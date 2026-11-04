@@ -1,12 +1,14 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^RemoteFrame\.[A-Za-z0-9.-]+$')][string]$PackageId,
     [Parameter(Mandatory)][string]$Version,
-    [ValidateRange(1,120)][int]$MaxAttempts = 20,
-    [ValidateRange(0,60)][int]$RetrySeconds = 15,
+    [ValidateRange(1,10000)][int]$MaxAttempts = 10000,
+    [ValidateRange(0,60)][int]$RetrySeconds = 30,
+    [ValidateRange(1,3600)][int]$TimeoutSeconds = 3600,
     [scriptblock]$Probe
 )
 $ErrorActionPreference = 'Stop'
 $Version = & "$PSScriptRoot/Get-ReleaseVersion.ps1" $Version
+$elapsed = [Diagnostics.Stopwatch]::StartNew()
 if (-not $Probe) {
     $Probe = {
         param($id, $version)
@@ -28,8 +30,11 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         return
     }
     if ($attempt -lt $MaxAttempts) {
-        Write-Output "Waiting for NuGet validation/indexing: $PackageId $Version ($attempt/$MaxAttempts)"
-        if ($RetrySeconds) { Start-Sleep -Seconds $RetrySeconds }
+        $remaining = $TimeoutSeconds - $elapsed.Elapsed.TotalSeconds
+        if ($remaining -le 0) { break }
+        Write-Output "Waiting for NuGet validation/indexing: $PackageId $Version (attempt $attempt, $([int]$remaining)s remaining)"
+        if ($RetrySeconds) { Start-Sleep -Milliseconds ([int](1000 * [Math]::Min($RetrySeconds, $remaining))) }
+        if ($elapsed.Elapsed.TotalSeconds -ge $TimeoutSeconds) { break }
     }
 }
-throw "$PackageId $Version was uploaded or already existed, but is not available for restore from NuGet.org. Dependent publication stopped. Check NuGet.org Manage Packages for pending/failed validation, then rerun the publish job using the existing artifacts."
+throw "$PackageId $Version was uploaded or already existed, but is not available for restore from NuGet.org. Release verification failed; downstream release jobs remain blocked. Check NuGet.org Manage Packages for pending/failed validation, then rerun the publish job using the existing artifacts."

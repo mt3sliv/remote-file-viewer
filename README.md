@@ -92,7 +92,7 @@ RemoteFrame is a preview. Managed text rendering supports Windows and Linux; the
 
 Private desktops isolate application UI, but they are not an operating-system security sandbox. Office applications and file dialogs retain the permissions of their process identity. Configure file authorization and filesystem permissions accordingly. Streaming images also cannot prevent screenshots or OCR of visible content.
 
-Source download and save-back default to the service account. Caller file access requires Windows credentials and, for remote shares, suitable delegation. Running Office as the caller additionally requires a host-provided worker launcher and appropriate permissions; see [shared files and identities](RemoteFrame/src/RemoteFrame.AspNetCore/PACKAGE.md#shared-files-and-identities).
+Source download and save-back default to the service account. Caller file access requires Windows credentials and, for remote shares, suitable delegation. Running Office as the caller uses a built-in Windows token launcher and requires appropriate host privileges and permissions; see [IIS Windows authentication setup](RemoteFrame/docs/IISWindowsAuthentication.md) and [shared files and identities](RemoteFrame/src/RemoteFrame.AspNetCore/PACKAGE.md#shared-files-and-identities).
 
 ## Documentation
 

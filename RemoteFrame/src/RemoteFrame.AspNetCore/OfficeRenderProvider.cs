@@ -13,7 +13,7 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
     public async ValueTask<IRenderSession> OpenAsync(string path, CancellationToken ct)
         => await OpenAsync(path, null, ct);
 
-    internal async ValueTask<IRenderSession> OpenAsync(string path, Func<ProcessStartInfo, CancellationToken, ValueTask<Process>>? launcher, CancellationToken ct)
+    internal async ValueTask<IRenderSession> OpenAsync(string path, Func<ProcessStartInfo, CancellationToken, ValueTask<WorkerConnection>>? launcher, CancellationToken ct)
     {
         var runtime = BundledOfficeRuntime.Load();
         var start = new ProcessStartInfo(runtime.WorkerPath)
@@ -26,15 +26,15 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
         start.ArgumentList.Add(runtime.EnginePath);
         start.ArgumentList.Add(Path.GetFullPath(path));
         if (!options.Value.PreferInstalledOfficeApplications) start.ArgumentList.Add("--bundled-only");
-        var process = launcher is null
-            ? Process.Start(start) ?? throw new IOException("Cannot start the bundled Office worker.")
+        var connection = launcher is null
+            ? new WorkerConnection(Process.Start(start) ?? throw new IOException("Cannot start the bundled Office worker."))
             : await launcher(start, ct);
-        var session = new WorkerSession(process);
+        var session = new WorkerSession(connection);
         try { await session.CaptureAsync(ct); return session; }
         catch { await session.DisposeAsync(); throw; }
     }
 
-    private sealed class WorkerSession(Process process) : IRenderSession
+    private sealed class WorkerSession(WorkerConnection connection) : IRenderSession
     {
         public bool CanSave => true;
         private readonly SemaphoreSlim gate = new(1);
@@ -49,9 +49,9 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
                 if (disposed) throw new IOException("Office session is closed.");
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(initialized ? TimeSpan.FromSeconds(45) : TimeSpan.FromMinutes(5));
-                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command, Json).AsMemory(), timeout.Token);
-                await process.StandardInput.FlushAsync(timeout.Token);
-                var line = await process.StandardOutput.ReadLineAsync(timeout.Token);
+                await connection.Input.WriteLineAsync(JsonSerializer.Serialize(command, Json).AsMemory(), timeout.Token);
+                await connection.Input.FlushAsync(timeout.Token);
+                var line = await connection.Output.ReadLineAsync(timeout.Token);
                 if (line is null) throw new IOException("Office worker exited before replying.");
                 var response = JsonSerializer.Deserialize<JsonElement>(line);
                 initialized = true;
@@ -81,11 +81,21 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
             {
                 if (disposed) return;
                 disposed = true;
-                process.StandardInput.Close();
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                try { await process.WaitForExitAsync(timeout.Token); }
-                catch (OperationCanceledException) { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-                process.Dispose();
+                try
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    try
+                    {
+                        await connection.Input.WriteLineAsync("{\"kind\":\"close\"}".AsMemory(), timeout.Token);
+                        await connection.Input.FlushAsync(timeout.Token);
+                        // Redirected stdin can signal EOF; named pipes need the close command.
+                        connection.Input.Close();
+                        await connection.Process.WaitForExitAsync(timeout.Token);
+                    }
+                    catch (Exception ex) when (ex is OperationCanceledException or IOException)
+                    { if (!connection.Process.HasExited) connection.Process.Kill(entireProcessTree: true); }
+                }
+                finally { connection.Dispose(); }
             }
             finally { gate.Release(); }
         }

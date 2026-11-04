@@ -1,6 +1,7 @@
 param([Parameter(Mandatory)][string]$Version,[string]$Directory = "$PSScriptRoot/../artifacts/packages",[switch]$ValidateOnly,
     [ValidateSet('All','Managed','Worker','LibreOffice','Integration')][string]$Group = 'All',
-    [string]$ExpectedCommit = $env:GITHUB_SHA)
+    [string]$ExpectedCommit = $env:GITHUB_SHA,
+    [ValidateRange(1,3600)][int]$AvailabilityTimeoutSeconds = 3600)
 $ErrorActionPreference = 'Stop'
 $Version = & "$PSScriptRoot/Get-ReleaseVersion.ps1" $Version
 $name = if ($Group -eq 'All') { 'release.json' } else { "release-$Group.json" }
@@ -36,5 +37,12 @@ $packages = $manifest.packages | Sort-Object @{Expression={ if ($_.id -match '\.
 foreach ($entry in $packages) {
     & dotnet nuget push "$Directory/$($entry.file)" --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate --timeout 900
     if ($LASTEXITCODE -ne 0) { throw "NuGet publish failed: $($entry.id). Rerun the publish job to retry existing artifacts." }
-    & "$PSScriptRoot/Wait-NuGetPackage.ps1" -PackageId $entry.id -Version $Version
+}
+# Upload the group before waiting: validation can run concurrently and the
+# temporary publishing key is no longer needed during the indexing wait.
+$availability = [Diagnostics.Stopwatch]::StartNew()
+foreach ($entry in $packages) {
+    $remaining = [Math]::Max(1, [int][Math]::Floor($AvailabilityTimeoutSeconds - $availability.Elapsed.TotalSeconds))
+    & "$PSScriptRoot/Wait-NuGetPackage.ps1" -PackageId $entry.id -Version $Version -TimeoutSeconds $remaining
+    if ($availability.Elapsed.TotalSeconds -ge $AvailabilityTimeoutSeconds) { throw 'NuGet release availability verification exceeded its time limit. Rerun using the existing artifacts.' }
 }

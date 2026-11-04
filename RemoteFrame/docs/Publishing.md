@@ -111,15 +111,20 @@ the run, downloads its retained artifact and validates version, commit and hashe
 before requesting a publishing key. It publishes the verified artifact with
 existing package versions skipped. No tag is moved and no packages are rebuilt.
 
-Dependencies are uploaded before their coordinators. After each upload (including
-skipped duplicates), publication waits for that exact version to appear in the
-NuGet flat-container version index and for its package download to return HTTP 200.
-Checks make up to 20 attempts with 15 seconds between attempts and bounded HTTP
-timeouts. If a package remains unavailable, the job fails before uploading its
-dependents. Check NuGet.org Manage Packages for pending or failed validation, then
-rerun the publish job with its existing verified artifacts. This confirms restore
-availability, not search visibility. Local validation uses `-ValidateOnly` and
-never obtains a publishing key or calls the availability probe.
+Dependencies are uploaded before their coordinators. Each group finishes uploading
+before waiting, so NuGet can validate its packages concurrently and the temporary
+publishing key is no longer needed during the wait. Publication then checks that
+every exact version appears in the NuGet flat-container version index and its
+package download returns HTTP 200, including skipped duplicate uploads.
+Checks run every 30 seconds with bounded HTTP timeouts and a shared one-hour
+availability budget per publish invocation (`-AvailabilityTimeoutSeconds` can
+shorten it). Publish jobs allow 90 minutes for upload and verification. A job
+succeeds only after its entire group is available; downstream release groups
+remain blocked on failure. Packages within a group can be temporarily unavailable
+while NuGet validation runs. Check NuGet.org Manage Packages for pending or failed
+validation, then rerun the publish job with its existing verified artifacts.
+This confirms restore availability, not search visibility. Local validation uses
+`-ValidateOnly` and never obtains a publishing key or calls the availability probe.
 
 ## Runtime size and installation
 

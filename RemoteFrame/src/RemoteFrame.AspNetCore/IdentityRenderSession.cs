@@ -17,12 +17,16 @@ public sealed class FileAccessOptions
     public bool StageLocally { get; set; } = true;
     public FileAccessIdentity DownloadIdentity { get; set; }
     public FileAccessIdentity SaveBackIdentity { get; set; }
+    /// <summary>Optional host-owned staging root; defaults to the host temporary directory.</summary>
+    public string? StagingDirectory { get; set; }
 }
 
 public sealed class ApplicationSessionOptions
 {
     public FileAccessIdentity ProcessIdentity { get; set; }
-    /// <summary>Host implementation must launch the worker as the authenticated Windows caller,
+    /// <summary>Load the caller's Windows profile for the built-in token launcher.</summary>
+    public bool LoadCallerProfile { get; set; } = true;
+    /// <summary>Optional override for the built-in token launcher. Host implementation must launch the worker as the authenticated Windows caller,
     /// preserve redirected pipes, and grant that caller access to the staged directory.
     /// The library owns and disposes the returned process.</summary>
     public Func<HttpContext, ProcessStartInfo, CancellationToken, ValueTask<Process>>? LaunchCallerWorkerAsync { get; set; }
@@ -73,10 +77,10 @@ internal sealed class IdentityRenderSession : IRenderSession
                 if (needsCaller) throw new InvalidOperationException("Caller identity requires local staging.");
                 return await provider.OpenAsync(path, ct);
             }
-            if (app.ProcessIdentity == FileAccessIdentity.Caller && (provider is not OfficeRenderProvider || app.LaunchCallerWorkerAsync is null))
-                throw new InvalidOperationException("Caller process identity requires Office and a host caller-worker launcher.");
+            if (app.ProcessIdentity == FileAccessIdentity.Caller && provider is not OfficeRenderProvider)
+                throw new InvalidOperationException("Caller process identity requires an Office provider.");
             path = Path.GetFullPath(path);
-            directory = Path.Combine(Path.GetTempPath(), "RemoteFrame-stage-" + Guid.NewGuid().ToString("N"));
+            directory = Path.Combine(access.StagingDirectory ?? Path.GetTempPath(), "RemoteFrame-stage-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
             var local = Path.Combine(directory, Path.GetFileName(path));
             // Open only the source under impersonation. Local storage belongs to the service.
@@ -90,6 +94,11 @@ internal sealed class IdentityRenderSession : IRenderSession
                 ? await office.OpenAsync(local, app.ProcessIdentity == FileAccessIdentity.Caller
                     ? async (start, token) =>
                     {
+                        if (app.LaunchCallerWorkerAsync is null)
+                        {
+                            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Caller worker requires Windows.");
+                            return await WindowsCallerWorkerLauncher.LaunchAsync(start, caller!, directory, app.LoadCallerProfile, token);
+                        }
                         var process = await app.LaunchCallerWorkerAsync!(context, start, token);
                         try
                         {
@@ -98,7 +107,7 @@ internal sealed class IdentityRenderSession : IRenderSession
                             using (accessToken)
                             using (var actual = new WindowsIdentity(accessToken.DangerousGetHandle()))
                                 if (actual.User != caller!.User) throw new InvalidOperationException("Worker was not launched as the caller.");
-                            return process;
+                            return new WorkerConnection(process);
                         }
                         catch
                         {

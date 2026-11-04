@@ -208,7 +208,7 @@ jobs:
   publish-managed:
     needs: [version, build-managed]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 90
     environment: nuget
     permissions:
       contents: read
@@ -241,7 +241,7 @@ jobs:
   publish-worker:
     needs: [version, build-worker, publish-managed]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 90
     environment: nuget
     permissions:
       contents: read
@@ -274,7 +274,7 @@ jobs:
   publish-libreoffice:
     needs: [version, build-libreoffice]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: nuget
     permissions:
       contents: read
@@ -307,7 +307,7 @@ jobs:
   publish-integration:
     needs: [version, build-libreoffice, publish-worker, publish-libreoffice]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 90
     environment: nuget
     permissions:
       contents: read
@@ -340,7 +340,7 @@ jobs:
   recover-verified-release:
     if: github.event_name == 'workflow_dispatch' && inputs.recovery_ci_run_id != ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: nuget
     permissions:
       contents: read

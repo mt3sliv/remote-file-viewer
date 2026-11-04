@@ -17,6 +17,8 @@ using RemoteFrame.AspNetCore;
 using RemoteFrame.Core;
 using RemoteFrame.Rendering;
 
+if (args.FirstOrDefault() == "--caller-launch-probe") { await CallerLauncherChecks.ProbeAsync(args); return; }
+await CallerLauncherChecks.RunAsync();
 await IdentityChecks.RunAsync();
 await CleanupChecks.RunAsync();
 await AuthorizationChecks.RunAsync();

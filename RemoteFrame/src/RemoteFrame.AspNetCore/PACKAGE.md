@@ -249,19 +249,36 @@ fail without retrying as the service. File authorization callbacks still apply.
 Service operations explicitly revert ambient Windows impersonation, including
 when the host invokes RemoteFrame from inside a caller impersonation scope.
 
-`ProcessIdentity = Caller` requires a host implementation of
-`options.ApplicationSession.LaunchCallerWorkerAsync`. It receives the opening
-`HttpContext`, configured `ProcessStartInfo`, and cancellation token. The host
-must start the worker using the caller's primary Windows token, preserve its
-redirected stdin/stdout streams and arguments, and grant that identity access to
-the staged directory (the document argument identifies it), runtime files and
-application installation. The library verifies the returned worker's user SID
-against the caller before initializing the session and owns process disposal.
-There is no built-in token-based process launcher. Ordinary `Process.Start`
-inside `RunImpersonated` does not change the process identity; see
-[Microsoft's impersonation documentation](https://learn.microsoft.com/en-us/windows/win32/secauthz/impersonation-levels).
-The host launcher must handle profiles, privileges and ACLs appropriate to its
-deployment. Caller process mode is supported only for Office providers.
+`ProcessIdentity = Caller` uses the built-in Windows token launcher unless
+`options.ApplicationSession.LaunchCallerWorkerAsync` is supplied. The built-in
+launcher duplicates the authenticated Windows token into a primary token and calls
+`CreateProcessWithTokenW`. It requires `SeImpersonatePrivilege` on the host account;
+missing privileges, unusable tokens, denied access or startup failure fail explicitly.
+It verifies the worker's SID before resuming it and verifies the connecting process
+ID on a unique named pipe restricted to the host and caller. No password is stored
+and no service credentials or environment block are passed to the caller process.
+
+The caller receives Modify access to its staging directory. `FileAccess.StagingDirectory`
+can select a host-managed staging root; otherwise the host temporary directory is
+used. The worker gets session-local `TEMP` and `TMP` directories, and its process
+tree is assigned to a kill-on-close job. `ApplicationSession.LoadCallerProfile`
+defaults to `true` to load the caller's registry profile for Office settings.
+Set it to `false` only when the deployment does not require those settings.
+Worker, engine and installed-application files must already be readable/executable
+by the caller; the launcher does not modify deployment or installation ACLs.
+
+The built-in launcher requires the updated worker with `--pipe` support. Rebuild
+and deploy both managed packages and the worker runtime together. Old workers
+fail startup rather than running as the service. The Windows token API has a
+1024-character command-line limit; overly long deployment/document paths are
+rejected. Caller processes stay in the hosting session, not the user's interactive
+desktop. See [CreateProcessWithTokenW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithtokenw).
+
+The optional host override receives the opening `HttpContext`, configured
+`ProcessStartInfo`, and cancellation token. It must return a caller-owned process
+with redirected stdin/stdout and preserve the arguments. It remains responsible
+for staging access, profile, environment and process-lifetime handling. The library
+checks its returned worker SID as well. Caller process mode supports Office providers only.
 
 With `StageLocally = false`, only service identities are accepted and the original
 provider path is used. Office still makes its own working copy. Text rendering is

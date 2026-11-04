@@ -65,8 +65,9 @@ Release `0.3.0-preview.6` resolves a reproduced mouse-release race on busy appli
 Shared-file staging and source read/save identities can be configured separately
 from the Office worker identity. Defaults use the service account. See
 [Shared files and identities](src/RemoteFrame.AspNetCore/PACKAGE.md#shared-files-and-identities)
-for caller credentials, delegation and the required host launcher for caller-owned
-Office processes.
+for caller credentials, delegation and the built-in token launcher for caller-owned
+Office processes. [IIS Windows authentication setup](docs/IISWindowsAuthentication.md)
+describes host privileges, staging permissions and deployment checks.
 
 The Windows preview includes a full LibreOffice distribution, app-local Visual C++ runtime DLLs, a self-contained C# worker, native input helper, and notices. By default, Office sessions try the host account's file association when supported, then compatible installed applications discovered through Windows App Paths, then bundled LibreOffice. Supported installed adapters are Excel (`.xls`, `.xlsx`, `.xlsm`, `.ods`), Word (`.doc`, `.docx`, `.odt`), and LibreOffice. Presentations currently use a supported LibreOffice adapter. Unsupported associations and applications with a different architecture from the worker are skipped; startup failures advance to the next candidate. No association command templates, shell execution, DDE or attachment to an existing Office process are used. Set `PreferInstalledOfficeApplications = false` to require the bundled engine.
 
