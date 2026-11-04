@@ -26,7 +26,13 @@ internal static class IdentityChecks
             Assert(File.ReadAllText(source) == "external", "Conflicting source is preserved");
             await RejectAsync(async () => { await session.DisposeAsync(); }, typeof(IOException));
             await session.DisposeAsync();
-            Assert(!Directory.Exists(System.IO.Path.GetDirectoryName(staged)), "Staging cleaned after conflict");
+            Assert(File.ReadAllText(staged) == "conflicting", "Recovery copy retained after conflict and repeated disposal");
+            File.Delete(staged);
+            Directory.Delete(System.IO.Path.GetDirectoryName(staged)!);
+            var successful = await IdentityRenderSession.OpenAsync(provider, source, context, options, default);
+            var successfulPath = provider.Path!;
+            await successful.DisposeAsync();
+            Assert(!Directory.Exists(System.IO.Path.GetDirectoryName(successfulPath)), "Successful cleanup removes staging");
             options.FileAccess.StageLocally = false;
             await using (await IdentityRenderSession.OpenAsync(provider, source, context, options, default))
                 Assert(provider.Path == source, "Service direct mode preserves original path");
@@ -42,6 +48,30 @@ internal static class IdentityChecks
             }
             if (OperatingSystem.IsWindows())
             {
+                using (var impersonated = WindowsIdentity.GetCurrent())
+                {
+                    await WindowsIdentity.RunImpersonatedAsync(impersonated.AccessToken, async () =>
+                    {
+                        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+                        using var before = WindowsIdentity.GetCurrent(true);
+                        Assert(before is not null, "Regression starts inside Windows impersonation");
+                        provider.Observe = () =>
+                        {
+                            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+                            using var current = WindowsIdentity.GetCurrent(true);
+                            Assert(current is null, "Service renderer operation reverts ambient impersonation");
+                        };
+                        var serviceOptions = new RemoteFrameOptions();
+                        var serviceSession = await IdentityRenderSession.OpenAsync(provider, source, context, serviceOptions, default);
+                        File.WriteAllText(provider.Path!, "service saved");
+                        await serviceSession.CaptureAsync(default);
+                        await serviceSession.DisposeAsync();
+                        Assert(File.ReadAllText(source) == "service saved", "Service save succeeds within impersonating host");
+                        using var after = WindowsIdentity.GetCurrent(true);
+                        Assert(after is not null, "Host impersonation restored after service operations");
+                        provider.Observe = null;
+                    });
+                }
                 var identity = WindowsIdentity.GetCurrent();
                 context.User = new WindowsPrincipal(identity);
                 options.ApplicationSession.ProcessIdentity = FileAccessIdentity.Service;
@@ -80,15 +110,16 @@ internal static class IdentityChecks
     {
         public string? Path;
         public int Opens;
+        public Action? Observe;
         public bool CanOpen(string path) => true;
         public ValueTask<IRenderSession> OpenAsync(string path, CancellationToken ct)
-        { Path = path; Opens++; return ValueTask.FromResult<IRenderSession>(new Session()); }
+        { Observe?.Invoke(); Path = path; Opens++; return ValueTask.FromResult<IRenderSession>(new Session(this)); }
     }
-    private sealed class Session : IRenderSession
+    private sealed class Session(Provider provider) : IRenderSession
     {
         public bool CanSave => true;
-        public ValueTask<Frame> CaptureAsync(CancellationToken ct) => ValueTask.FromResult(new Frame([], 1, 1));
+        public ValueTask<Frame> CaptureAsync(CancellationToken ct) { provider.Observe?.Invoke(); return ValueTask.FromResult(new Frame([], 1, 1)); }
         public ValueTask ApplyAsync(InputEvent input, CancellationToken ct) => ValueTask.CompletedTask;
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() { provider.Observe?.Invoke(); return ValueTask.CompletedTask; }
     }
 }

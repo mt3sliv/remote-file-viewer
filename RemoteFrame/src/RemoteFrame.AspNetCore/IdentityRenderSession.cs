@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using Microsoft.AspNetCore.Http;
 using RemoteFrame.Core;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace RemoteFrame.AspNetCore;
 
@@ -34,16 +36,22 @@ internal sealed class IdentityRenderSession : IRenderSession
     private readonly FileAccessIdentity saveIdentity;
     private byte[] sourceHash, localHash;
     private bool disposed;
+    private readonly ILogger logger;
 
     private IdentityRenderSession(IRenderSession inner, string source, string local, string directory,
-        WindowsIdentity? caller, FileAccessIdentity saveIdentity, byte[] hash)
+        WindowsIdentity? caller, FileAccessIdentity saveIdentity, byte[] hash, ILogger logger)
     {
         this.inner = inner; this.source = source; this.local = local; this.directory = directory;
         this.caller = caller; this.saveIdentity = saveIdentity; sourceHash = hash; localHash = hash;
+        this.logger = logger;
     }
 
     internal static async ValueTask<IRenderSession> OpenAsync(IRenderProvider provider, string path,
-        HttpContext context, RemoteFrameOptions options, CancellationToken ct)
+        HttpContext context, RemoteFrameOptions options, CancellationToken ct, ILogger? logger = null)
+        => await AsServiceAsync(() => OpenCoreAsync(provider, path, context, options, ct, logger ?? NullLogger.Instance));
+
+    private static async Task<IRenderSession> OpenCoreAsync(IRenderProvider provider, string path,
+        HttpContext context, RemoteFrameOptions options, CancellationToken ct, ILogger logger)
     {
         var access = options.FileAccess;
         var app = options.ApplicationSession;
@@ -100,7 +108,7 @@ internal sealed class IdentityRenderSession : IRenderSession
                         }
                     } : null, ct)
                 : await provider.OpenAsync(local, ct);
-            return new IdentityRenderSession(renderer, path, local, directory, caller, access.SaveBackIdentity, hash);
+            return new IdentityRenderSession(renderer, path, local, directory, caller, access.SaveBackIdentity, hash, logger);
         }
         catch
         {
@@ -116,10 +124,17 @@ internal sealed class IdentityRenderSession : IRenderSession
 
     private static T Run<T>(FileAccessIdentity identity, WindowsIdentity? caller, Func<T> action)
     {
-        if (identity == FileAccessIdentity.Service) return action();
+        if (identity == FileAccessIdentity.Service)
+            return OperatingSystem.IsWindows() ? WindowsIdentity.RunImpersonated(SafeAccessTokenHandle.InvalidHandle, action) : action();
         if (!OperatingSystem.IsWindows() || caller is null) throw new InvalidOperationException("Windows caller token unavailable.");
         return WindowsIdentity.RunImpersonated(caller.AccessToken, action);
     }
+
+    private static Task<T> AsServiceAsync<T>(Func<Task<T>> action) => OperatingSystem.IsWindows()
+        ? WindowsIdentity.RunImpersonatedAsync(SafeAccessTokenHandle.InvalidHandle, action) : action();
+
+    private static Task AsServiceAsync(Func<Task> action) => OperatingSystem.IsWindows()
+        ? WindowsIdentity.RunImpersonatedAsync(SafeAccessTokenHandle.InvalidHandle, action) : action();
 
     private static byte[] Hash(string path)
     {
@@ -151,24 +166,36 @@ internal sealed class IdentityRenderSession : IRenderSession
     }
 
     public bool CanSave => inner.CanSave;
-    public ValueTask ConfigureAsync(FrameConfiguration configuration, CancellationToken ct) => inner.ConfigureAsync(configuration, ct);
+    public ValueTask ConfigureAsync(FrameConfiguration configuration, CancellationToken ct) => new(AsServiceAsync(() => inner.ConfigureAsync(configuration, ct).AsTask()));
     public async ValueTask<Frame> CaptureAsync(CancellationToken ct)
     {
-        var frame = await inner.CaptureAsync(ct); SaveBack(); return frame;
+        return await AsServiceAsync(async () => { var frame = await inner.CaptureAsync(ct); SaveBack(); return frame; });
     }
     public async ValueTask ApplyAsync(InputEvent input, CancellationToken ct)
     {
-        await inner.ApplyAsync(input, ct); SaveBack();
+        await AsServiceAsync(async () => { await inner.ApplyAsync(input, ct); SaveBack(); });
     }
     public async ValueTask DisposeAsync()
+        => await AsServiceAsync(DisposeCoreAsync);
+
+    private async Task DisposeCoreAsync()
     {
         if (disposed) return;
         disposed = true;
-        try { await inner.DisposeAsync(); SaveBack(); }
+        try
+        {
+            await inner.DisposeAsync();
+            SaveBack();
+            Directory.Delete(directory, true);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Session cleanup or save-back failed. Recovery files retained at {RecoveryDirectory}; source {SourcePath}", directory, source);
+            throw new IOException($"Session cleanup or save-back failed. Recovery files retained at '{directory}'.", ex);
+        }
         finally
         {
             if (OperatingSystem.IsWindows()) caller?.Dispose();
-            Directory.Delete(directory, true);
         }
     }
 }

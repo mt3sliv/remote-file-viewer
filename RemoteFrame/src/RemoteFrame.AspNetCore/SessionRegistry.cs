@@ -1,9 +1,10 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using RemoteFrame.Core;
 
 namespace RemoteFrame.AspNetCore;
 
-internal sealed class SessionRegistry : BackgroundService
+internal sealed class SessionRegistry(ILogger<SessionRegistry> logger) : BackgroundService
 {
     private sealed record Item(string Owner, SerializedSession Renderer, DateTime Created);
     private readonly Dictionary<string, Item> sessions = new();
@@ -49,7 +50,8 @@ internal sealed class SessionRegistry : BackgroundService
             sessions.Remove(id);
             attached.Remove(id);
         }
-        await removed.Renderer.DisposeAsync();
+        try { await removed.Renderer.DisposeAsync(); }
+        catch (Exception ex) { logger.LogError(ex, "Failed to clean up RemoteFrame session {SessionId}", id); }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -59,9 +61,7 @@ internal sealed class SessionRegistry : BackgroundService
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                KeyValuePair<string, Item>[] expired;
-                lock (gate) expired = sessions.Where(x => DateTime.UtcNow - x.Value.Created > Lifetime).ToArray();
-                foreach (var item in expired) await RemoveAsync(item.Key, item.Value.Owner);
+                await RemoveExpiredAsync();
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
@@ -71,6 +71,13 @@ internal sealed class SessionRegistry : BackgroundService
             lock (gate) remaining = sessions.ToArray();
             foreach (var item in remaining) await RemoveAsync(item.Key, item.Value.Owner);
         }
+    }
+
+    internal async Task RemoveExpiredAsync()
+    {
+        KeyValuePair<string, Item>[] expired;
+        lock (gate) expired = sessions.Where(x => DateTime.UtcNow - x.Value.Created > Lifetime).ToArray();
+        foreach (var item in expired) await RemoveAsync(item.Key, item.Value.Owner);
     }
 
     internal sealed class SerializedSession(IRenderSession renderer, FrameConfiguration initialConfiguration) : IRenderSession

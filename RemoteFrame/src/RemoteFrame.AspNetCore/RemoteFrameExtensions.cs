@@ -102,7 +102,7 @@ public static class RemoteFrameExtensions
             try { options.Validate(configuration); }
             catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
             IRenderSession renderer;
-            try { renderer = await IdentityRenderSession.OpenAsync(provider, filePath, ctx, options, ctx.RequestAborted); }
+            try { renderer = await IdentityRenderSession.OpenAsync(provider, filePath, ctx, options, ctx.RequestAborted, logger); }
             catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return Results.NotFound(); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
             { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the Office worker, installed applications or optional LibreOffice runtime, and server logs." }); }

@@ -232,11 +232,22 @@ save identity needs read, create, replace and delete permissions in the source
 directory. Closing a session cleans up staging and does not invoke Office Save.
 Unsaved application edits remain unsaved.
 
+If final save-back or renderer cleanup fails, the staging directory is retained
+in place for recovery. Server error logs include its path and the source path;
+the library does not expose these paths to the browser or overwrite a conflicting
+source file. An administrator can retrieve the saved staged document and remove
+the retained directory after recovery. Retained directories are not automatically
+purged by RemoteFrame and remain subject to the host's temporary-storage policy.
+Session cleanup failures are logged individually so expiration and shutdown can
+continue cleaning other sessions.
+
 `Caller` file access requires an authenticated `WindowsIdentity` on the opening
 HTTP request. Its token is duplicated for the session and disposed on closure.
 Cookie/JWT identity alone does not provide Windows credentials. Remote SMB access
 also requires suitable Windows delegation. Missing credentials or denied access
 fail without retrying as the service. File authorization callbacks still apply.
+Service operations explicitly revert ambient Windows impersonation, including
+when the host invokes RemoteFrame from inside a caller impersonation scope.
 
 `ProcessIdentity = Caller` requires a host implementation of
 `options.ApplicationSession.LaunchCallerWorkerAsync`. It receives the opening

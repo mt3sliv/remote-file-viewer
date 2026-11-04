@@ -18,6 +18,7 @@ using RemoteFrame.Core;
 using RemoteFrame.Rendering;
 
 await IdentityChecks.RunAsync();
+await CleanupChecks.RunAsync();
 await AuthorizationChecks.RunAsync();
 
 static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("PASS: " + message); }
