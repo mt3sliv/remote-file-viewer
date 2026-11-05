@@ -19,6 +19,7 @@ using RemoteFrame.Rendering;
 
 if (args.FirstOrDefault() == "--caller-launch-probe") { await CallerLauncherChecks.ProbeAsync(args); return; }
 await CallerLauncherChecks.RunAsync();
+await LaunchDiagnosticChecks.RunAsync();
 await IdentityChecks.RunAsync();
 await CleanupChecks.RunAsync();
 await AuthorizationChecks.RunAsync();

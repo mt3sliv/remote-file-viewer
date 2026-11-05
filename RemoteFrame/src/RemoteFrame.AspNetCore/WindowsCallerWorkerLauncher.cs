@@ -44,9 +44,13 @@ internal static class WindowsCallerWorkerLauncher
                 var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>(), Flags = 1, ShowWindow = 0 };
                 // A null desktop keeps the worker in the host's session. Windows grants the
                 // caller access to the inherited window station; Office creates its private desktop.
-                Check(CreateProcessWithTokenW(primary, loadProfile ? 1u : 0, start.FileName, command,
-                    0x08000404, environment.DangerousGetHandle(), Path.GetDirectoryName(start.FileName)!, ref startup, out var created),
-                    "Launch caller worker (requires SeImpersonatePrivilege and a usable Windows logon token)");
+                if (!CreateProcessWithTokenW(primary, loadProfile ? 1u : 0, start.FileName, command,
+                    0x08000404, environment.DangerousGetHandle(), Path.GetDirectoryName(start.FileName)!, ref startup, out var created))
+                {
+                    var error = Marshal.GetLastWin32Error(); // Preserve before diagnostic native calls.
+                    throw new CallerWorkerLaunchException(error, WindowsLaunchDiagnostics.Capture(service, caller, primary,
+                        start.FileName, directory, loadProfile));
+                }
                 try
                 {
                     VerifyIdentity(created.Process, callerSid);
@@ -144,7 +148,13 @@ internal static class WindowsCallerWorkerLauncher
     }
 
     private static void Check(bool success, string operation)
-    { if (!success) throw new Win32Exception(Marshal.GetLastWin32Error(), operation); }
+    {
+        if (!success)
+        {
+            var error = Marshal.GetLastWin32Error();
+            throw new Win32Exception(error, $"{operation}: Windows error {error} ({new Win32Exception(error).Message}).");
+        }
+    }
 
     private sealed class SafeEnvironment(nint pointer) : SafeHandle(pointer, true)
     {

@@ -64,11 +64,11 @@ internal static class Program
                     }
                     else { desktop.Apply(input); Reply(new { ok = true }); }
                 }
-                catch (Exception ex) { Reply(new { error = ex.Message }); }
+                catch (Exception ex) { Reply(new { error = ex.Message, stage = "application-operation", diagnostics = ex.ToString() }); }
             }
             return 0;
         }
-        catch (Exception ex) { Reply(new { error = ex.Message }); Console.Error.WriteLine(ex); return 1; }
+        catch (Exception ex) { Reply(new { error = ex.Message, stage = "application-open", diagnostics = ex.ToString() }); Console.Error.WriteLine(ex); return 1; }
         finally { pipe?.Dispose(); }
     }
     private static WindowsOfficeDesktop OpenDesktop(string bundled, string document, bool preferInstalled)

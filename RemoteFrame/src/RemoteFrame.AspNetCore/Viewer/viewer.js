@@ -16,7 +16,11 @@ async function api(url, options={}) {
     credentials:'same-origin', ...options,
     headers: { 'Content-Type':'application/json', ...csrf, ...(options.headers||{}) }
   });
-  if (!response.ok) throw new Error((await response.json().catch(()=>null))?.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const failure = await response.json().catch(()=>null);
+    const message = failure?.error || `Request failed (${response.status})`;
+    throw new Error(failure?.diagnosticId ? `${message} Reference: ${failure.diagnosticId}` : message);
+  }
   return response.status === 204 ? null : response.json();
 }
 $('selectedFile').textContent = selectedFileId || 'No file selected';

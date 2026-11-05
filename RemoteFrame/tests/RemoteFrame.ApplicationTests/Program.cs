@@ -77,7 +77,10 @@ try
     OfficeApplication.OpenFirst<string>(candidates, _ => throw new IOException("Simulated failure"));
     throw new Exception("All-app failure was hidden.");
 }
-catch (IOException ex) { Assert(ex.InnerException is AggregateException errors && errors.InnerExceptions.Count == 3, "All startup failures must be retained."); }
+catch (IOException ex) {
+    Assert(ex.InnerException is AggregateException errors && errors.InnerExceptions.Count == 3, "All startup failures must be retained.");
+    foreach (var candidate in candidates) Assert(ex.ToString().Contains(candidate.Executable), "Startup diagnostics identify each failed application executable.");
+}
 attempted.Clear();
 OfficeApplication.OpenFirst(candidates, app => { attempted.Add(app.Executable); return app; });
 Assert(attempted.Count == 1, "Successful open must stop fallback attempts.");

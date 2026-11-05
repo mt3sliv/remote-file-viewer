@@ -55,7 +55,13 @@ internal sealed class OfficeRenderProvider(IOptions<RemoteFrameOptions> options)
                 if (line is null) throw new IOException("Office worker exited before replying.");
                 var response = JsonSerializer.Deserialize<JsonElement>(line);
                 initialized = true;
-                if (response.TryGetProperty("error", out var error)) throw new IOException(error.GetString());
+                if (response.TryGetProperty("error", out var error))
+                {
+                    var details = response.TryGetProperty("diagnostics", out var diagnostics) ? diagnostics.GetString() : null;
+                    if (response.TryGetProperty("stage", out var stage) && stage.GetString() == "application-open")
+                        throw new OfficeApplicationOpenException(error.GetString() ?? "Unknown worker error", details);
+                    throw new IOException(error.GetString() + (details is null ? "" : Environment.NewLine + details));
+                }
                 return response;
             }
             finally { gate.Release(); }

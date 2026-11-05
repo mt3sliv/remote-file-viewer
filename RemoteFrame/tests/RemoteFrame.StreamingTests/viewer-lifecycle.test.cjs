@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const script = fs.readFileSync('src/RemoteFrame.AspNetCore/Viewer/viewer.js','utf8');
 const flush = async () => { for(let i=0;i<5;i++) await new Promise(setImmediate); };
-function app({fileId, pending, connectThrows=false, showSaveButton=true}={}) {
+function app({fileId, pending, connectThrows=false, showSaveButton=true, openError}={}) {
   const elements = new Map(), handlers = new Map(), requests = [], sockets = [];
   const element = id => {
     if(!elements.has(id)) elements.set(id, {value:'',checked:false,width:1280,height:800,disabled:false,
@@ -33,7 +33,7 @@ function app({fileId, pending, connectThrows=false, showSaveButton=true}={}) {
       if(url.endsWith('/api/files'))return response(['opaque-id']);
       if(options.method==='DELETE')return {ok:true,status:204};
       if(options.method==='PUT')return response({configuration:JSON.parse(options.body)});
-      if(options.method==='POST'){if(pending)await pending;return response({id:'session/one',canSave:true});}
+      if(options.method==='POST'){if(pending)await pending;if(openError)return {ok:false,status:400,json:async()=>openError};return response({id:'session/one',canSave:true});}
       throw new Error('Unexpected URL: '+url);
     }
   };
@@ -62,6 +62,13 @@ test('Selected opaque IDs auto-open with PathBase, server capability and CSRF he
   assert.equal(deleted.url,'/portal/renderer/api/sessions/session%2Fone');assert.equal(deleted.keepalive,true);
   assert.equal(viewer.element('save').disabled,true);
 });
+test('Open failures show the stage explanation and server diagnostic reference',async()=>{
+  const viewer=app({fileId:'opaque',openError:{error:'Windows denied starting the document worker; Office has not started.',diagnosticId:'trace-123'}});
+  await flush();
+  assert.equal(viewer.element('status').textContent,'Windows denied starting the document worker; Office has not started. Reference: trace-123');
+  assert.equal(viewer.sockets.length,0);
+});
+
 test('No ID never enumerates files or opens a session',async()=>{
   const viewer=app();await flush();assert.equal(viewer.requests.filter(x=>x.method==='POST').length,0);
   assert.equal(viewer.element('open').disabled,true);await viewer.element('open').onclick();

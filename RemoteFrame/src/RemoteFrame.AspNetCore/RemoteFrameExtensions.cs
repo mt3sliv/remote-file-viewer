@@ -104,8 +104,20 @@ public static class RemoteFrameExtensions
             IRenderSession renderer;
             try { renderer = await IdentityRenderSession.OpenAsync(provider, filePath, ctx, options, ctx.RequestAborted, logger); }
             catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { return Results.NotFound(); }
+            catch (CallerWorkerLaunchException ex)
+            {
+                logger.LogWarning(ex, "Cannot open render session: stage {Stage}, native error {NativeErrorCode}, diagnostic {DiagnosticId}, file {FileId}",
+                    "worker-process-create", ex.NativeErrorCode, ctx.TraceIdentifier, request.FileId);
+                return Results.BadRequest(new { error = ex.PublicMessage, code = "caller_worker_launch_failed", stage = "worker-process-create", nativeErrorCode = ex.NativeErrorCode, diagnosticId = ctx.TraceIdentifier });
+            }
+            catch (OfficeApplicationOpenException ex)
+            {
+                logger.LogWarning(ex, "Document worker started but Office could not open the document; stage {Stage}, diagnostic {DiagnosticId}, file {FileId}",
+                    "application-open", ctx.TraceIdentifier, request.FileId);
+                return Results.BadRequest(new { error = "The document worker started, but its Office application could not open the document. Ask the server administrator to check the application startup diagnostics.", code = "office_application_open_failed", stage = "application-open", diagnosticId = ctx.TraceIdentifier });
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or DecoderFallbackException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
-            { logger.LogWarning(ex, "Cannot open render session"); return Results.BadRequest(new { error = "File cannot be opened. Check the Office worker, installed applications or optional LibreOffice runtime, and server logs." }); }
+            { logger.LogWarning(ex, "Cannot open render session; diagnostic {DiagnosticId}; file {FileId}; download {DownloadIdentity}, process {ProcessIdentity}, save {SaveBackIdentity}", ctx.TraceIdentifier, request.FileId, options.FileAccess.DownloadIdentity, options.ApplicationSession.ProcessIdentity, options.FileAccess.SaveBackIdentity); return Results.BadRequest(new { error = "File cannot be opened. Check the Office worker, installed applications or optional LibreOffice runtime, and server logs.", diagnosticId = ctx.TraceIdentifier }); }
             try
             {
                 await renderer.ConfigureAsync(configuration, ctx.RequestAborted);

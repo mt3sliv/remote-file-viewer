@@ -18,10 +18,12 @@ internal sealed record OfficeApplication(string Executable, OfficeApplicationKin
             catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException or UnauthorizedAccessException)
             {
                 Console.Error.WriteLine($"Office application failed: {application.Executable}: {ex.Message}");
-                failures.Add(ex);
+                failures.Add(new IOException($"{application.Kind} at '{application.Executable}' failed: {ex.Message}", ex));
             }
         }
-        throw new IOException("No supported Office application could open this document. Install compatible Excel/Word or add RemoteFrame.Office.Windows.WithLibreOffice for a bundled engine.", new AggregateException(failures));
+        throw new IOException(failures.Count == 0
+            ? "No supported Office application was discovered. Install compatible Excel/Word or add RemoteFrame.Office.Windows.WithLibreOffice for a bundled engine."
+            : $"All {failures.Count} discovered Office application candidates failed to open this document. See individual application failures for executable paths and reasons.", new AggregateException(failures));
     }
 
     public bool MatchesWindow(string name) => Kind switch

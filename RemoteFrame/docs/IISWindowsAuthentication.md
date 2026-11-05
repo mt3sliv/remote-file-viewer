@@ -78,6 +78,46 @@ cleanup terminates them. Profile loading defaults on; session-local `TEMP` and
 
 ## Deployment and acceptance checks
 
+### Diagnose a failed launch
+
+Session-open failures include a `diagnosticId`; the viewer displays it as a
+reference. Match it to the server warning for the same request. Windows error 5
+means access denied and does not by itself establish which permission failed.
+
+For a failure at `worker-process-create`, `CreateProcessWithTokenW` did not create
+the worker. Excel/Word/LibreOffice has not been launched. The server exception
+records the native system error plus the host and caller SIDs, authentication
+type, token type, impersonation level, session ID, elevation type and Windows
+logon ID. It reports whether `SeImpersonatePrivilege` is present and enabled on
+the actual host token, and whether the caller can read the worker executable.
+That read check does not establish execute access or dependent-DLL access.
+Token duplication and environment creation have already succeeded at this stage.
+
+Use the caller's `LogonId` to find the matching event 4624 `TargetLogonId` and
+inspect its LogonType. A successful logon proves authentication occurred; it does
+not prove that Windows permits creating a local process under that token. Check:
+
+- Caller read/execute/traversal permissions on the worker, runtime dependencies
+  and deployment parents, not just the app-pool account's permissions.
+- The logged host privilege state, token restrictions, and applicable Windows
+  application-control/security policy. Error 1314 specifically reports a required
+  privilege is unavailable; error 5 should not be treated as that diagnosis.
+- Profile access when `LoadCallerProfile=true`. As a controlled comparison,
+  test `false` only if the selected workload can run without the caller's profile;
+  do not automatically retry with a different identity or profile policy.
+
+For `application-open`, the worker connected successfully but Office discovery,
+startup or document initialization failed. The server log retains individual
+application names, executable paths and exceptions, including file-access
+failures, rather than suggesting an Office installation is always missing.
+Failures before token process creation continue to log their specific operation
+(for example, token duplication, staging permissions or environment creation).
+
+Server paths, SID/token diagnostics and full worker exception details remain in
+server logs. Browser responses contain the failure stage, a safe explanation,
+the native error where applicable, and the diagnostic reference. Access to the
+server logs should be restricted to administrators.
+
 Rebuild the Windows worker runtime along with the managed library: token-launched
 workers use the new `--pipe` protocol option. Existing service launches retain
 redirected stdin/stdout, and custom host launchers remain supported.

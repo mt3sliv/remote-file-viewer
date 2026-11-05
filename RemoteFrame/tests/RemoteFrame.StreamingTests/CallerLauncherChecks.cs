@@ -52,6 +52,9 @@ internal static class CallerLauncherChecks
             using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
             try { using var unexpected = await WindowsCallerWorkerLauncher.LaunchAsync(start, caller, directory, false, cancelled.Token); throw new Exception("Cancelled launch succeeded."); }
             catch (OperationCanceledException) { Console.WriteLine("PASS: Cancelled token launch does not start a worker"); }
+            var diagnostic = WindowsLaunchDiagnostics.Capture(current, caller, current.AccessToken, start.FileName, directory, false);
+            Check(diagnostic.Contains("LogonId=0x") && diagnostic.Contains("TokenType=") && diagnostic.Contains("Host SeImpersonatePrivilege:") && diagnostic.Contains("WorkerReadableAsCaller=yes"),
+                "Windows launch diagnostics inspect actual tokens, logon IDs, privilege state and caller file access");
             // Token process creation is a provisioned-host integration check. A generic
             // hosted runner can reject it with access denied as well as error 1314.
             // Keep transport/cancellation coverage unconditional and never suppress a
@@ -123,7 +126,9 @@ internal static class CallerLauncherChecks
             await connected;
             using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
             using var result = JsonDocument.Parse(await reader.ReadLineAsync(deadline.Token) ?? throw new IOException("Worker did not return its startup error over the pipe"));
-            Check(result.RootElement.GetProperty("error").GetString()!.Contains("No supported Office application"), "Office worker parses pipe options and returns startup errors over its pipe");
+            Check(result.RootElement.GetProperty("error").GetString()!.Contains("Office application"), "Office worker parses pipe options and returns startup errors over its pipe");
+            Check(result.RootElement.GetProperty("stage").GetString() == "application-open" && result.RootElement.GetProperty("diagnostics").GetString()!.Contains("IOException"),
+                "Office startup errors include stage and server diagnostics");
             await process.WaitForExitAsync(deadline.Token);
             Check(process.ExitCode == 1, "Office worker startup failure exits without opening an application");
         }
